@@ -163,7 +163,7 @@ def test(host, version, mode):
                 wait(lambda: request('/api/v1/devices',token=token)[0] == 200)
                 assert command(['ps','-q','mfconnect']).strip() != before
                 assert command(['exec','-T','mfconnect','cat','/var/lib/mfconnect/admin-token']).strip() == token
-            print('PASS: Docker-only startup without cloud credentials, /api, plugin download, host isolation, TLS rotation in gateway/API/FRP, invalid-key retention and restart persistence: ' + host,flush=True)
+            print('PASS: no cloud credentials, /api, plugin download, host isolation, TLS rotation in gateway/API/FRP, invalid-key retention and persistence: ' + mode + ' / ' + host,flush=True)
         except Exception:
             if started:
                 logs = command(['logs','--tail=50'])

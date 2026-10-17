@@ -226,7 +226,7 @@ def configure(output=Path('/output')):
     write(output / '.env', ''.join(k + '=' + v + '\n' for k,v in env.items()))
     print('配置已生成。请确认入口及 *.入口的 DNS 指向本服务器。')
     if c['tls_mode'] == 'provided': print('请将证书完整链和私钥分别放入 config/fullchain.pem、config/privkey.pem。')
-    print('启动：docker compose up -d')
+    print('配置已保存。可使用部署目录中的 Docker 启动脚本或 Compose 启动服务。')
 
 
 if __name__ == '__main__':
