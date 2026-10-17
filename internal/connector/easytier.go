@@ -44,10 +44,10 @@ func runEasyTier(ctx context.Context, configPath, runDir, binary string, interva
 	}
 	defer func() {
 		stop()
-		_ = core.WriteJSON(filepath.Join(runDir, "status.json"), Status{Version: core.Version, Transport: "easytier", State: "stopped", Updated: time.Now().Unix(), LastSync: lastSync})
+		_ = core.WriteJSON(filepath.Join(runDir, "status.json"), Status{Version: core.ConnectorVersion, Transport: "easytier", State: "stopped", Updated: time.Now().Unix(), LastSync: lastSync})
 	}()
 	for {
-		status := Status{Version: core.Version, Transport: "easytier", State: "configuration_required", Updated: time.Now().Unix(), LastSync: lastSync}
+		status := Status{Version: core.ConnectorVersion, Transport: "easytier", State: "configuration_required", Updated: time.Now().Unix(), LastSync: lastSync}
 		c, err := Load(configPath)
 		if err == nil && c.Transport != "easytier" {
 			return errors.New("transport changed; restart connector")

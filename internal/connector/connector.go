@@ -237,7 +237,7 @@ func Sync(ctx context.Context, c Config) (core.SyncResponse, error) {
 	if c.path != "" {
 		in.Software, in.UpdateReport = updates.PluginSoftware(c.path)
 		if in.Software != nil {
-			in.Software.Connector = core.Version
+			in.Software.Connector = core.ConnectorVersion
 		}
 	}
 	// Address collection must not interrupt the existing authenticated tunnel.
@@ -370,14 +370,14 @@ func runFRP(ctx context.Context, configPath, runDir, frpc string, interval time.
 	}
 	defer func() {
 		stopAll()
-		_ = core.WriteJSON(filepath.Join(runDir, "status.json"), Status{Version: core.Version, State: "stopped", Updated: time.Now().Unix(), LastSync: lastSync})
+		_ = core.WriteJSON(filepath.Join(runDir, "status.json"), Status{Version: core.ConnectorVersion, State: "stopped", Updated: time.Now().Unix(), LastSync: lastSync})
 	}()
 	for {
 		if time.Since(lastDiscovery) >= 30*time.Second {
 			_ = refreshDocker(ctx, configPath)
 			lastDiscovery = time.Now()
 		}
-		status := Status{Version: core.Version, Transport: "frp", State: "configuration_required", Updated: time.Now().Unix(), LastSync: lastSync}
+		status := Status{Version: core.ConnectorVersion, Transport: "frp", State: "configuration_required", Updated: time.Now().Unix(), LastSync: lastSync}
 		c, err := Load(configPath)
 		if err == nil && c.Transport != "frp" {
 			return errors.New("transport changed; restart connector")

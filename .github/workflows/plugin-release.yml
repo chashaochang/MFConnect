@@ -1,0 +1,36 @@
+name: Publish Unraid plugin test release
+on:
+  push:
+    tags: ['plugin-v*']
+permissions:
+  contents: write
+jobs:
+  plugin:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify source, transport and installer
+        run: |
+          python3 scripts/check_publication.py --ref HEAD
+          go test -race -timeout 120s ./internal/... ./cmd/...
+          python3 scripts/test_api_registration.py
+          make build frp
+          plugin_version=$(dist/mfconnectd version)
+          test "$GITHUB_REF_NAME" = "plugin-v$plugin_version"
+          python3 scripts/package_plugin.py --binary dist/mfconnectd --frpc dist/tools/frpc --frp-license dist/tools/FRP-LICENSE --local --output dist/plugin-offline
+          python3 scripts/test_plugin.py --package-dir dist/plugin-offline --legacy-config
+      - name: Build downloadable plugin assets
+        run: |
+          python3 scripts/package_plugin.py --binary dist/mfconnectd --frpc dist/tools/frpc --frp-license dist/tools/FRP-LICENSE --release-base "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME" --output dist/plugin-release
+          cp docs/existing-origin-v1.md dist/plugin-release/existing-origin-v1.md
+          printf '%s\n' 'Unraid plugin test release only. No cloud Docker update.' '' 'Existing-origin TCP transport v1 requires compatible RaidMate client support. This release does not certify Android/OHOS WebView compatibility.' '' 'Install the mfconnect.plg asset URL in Unraid Plugins → Install Plugin. The payload is checksum-pinned. Existing cloud configuration is retained; no new cloud configuration is required for this channel.' > dist/plugin-release/notes.md
+      - name: Publish prerelease without moving the stable channel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag --prerelease --title "MF Connect Unraid plugin ${GITHUB_REF_NAME#plugin-v}" --notes-file dist/plugin-release/notes.md dist/plugin-release/mfconnect.plg dist/plugin-release/mfconnect-*.tar.gz dist/plugin-release/SHA256SUMS dist/plugin-release/release.json dist/plugin-release/existing-origin-v1.md

@@ -15,8 +15,8 @@ from urllib.parse import urlparse
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--version', default='0.8.1', help='Unraid plugin package version')
-parser.add_argument('--connector-version', default='0.8.1', help='Bundled connector binary version')
+parser.add_argument('--version', default='0.9.0', help='Unraid plugin package version')
+parser.add_argument('--connector-version', default='0.9.0', help='Bundled connector binary version')
 parser.add_argument('--updater', type=Path, default=root / 'dist/mfconnect-updater')
 parser.add_argument('--frp-version', default='0.71.1')
 parser.add_argument('--binary', type=Path, required=True)
@@ -60,7 +60,7 @@ files = {
     'FRP_VERSION': ((args.frp_version + '\n').encode(), 0o644),
     'FRP-LICENSE': (args.frp_license.read_bytes(), 0o644),
 }
-for name in ('Connect.php', 'MFConnect.page', 'Settings.php', 'assets/settings.css',
+for name in ('Connect.php', 'MFConnect.page', 'Settings.php', 'register-api.js', 'api/index.js', 'api/package.json', 'assets/settings.css',
              'assets/settings.js', 'include/Settings.php', 'install.sh', 'rc.mfconnect'):
     path = root / 'plugin' / name
     files[name] = (path.read_bytes(), 0o755 if name in ('install.sh', 'rc.mfconnect') else 0o644)
@@ -95,6 +95,11 @@ bash "$stage/install.sh"
 '''
 remove = '''set -euo pipefail
 if [ -x /etc/rc.d/rc.mfconnect ]; then /etc/rc.d/rc.mfconnect stop; fi
+if [ -f /usr/local/lib/mfconnect/current/register-api.js ]; then
+  node /usr/local/lib/mfconnect/current/register-api.js remove
+  /etc/rc.d/rc.unraid-api archive-dependencies
+  /etc/rc.d/rc.unraid-api restart
+fi
 if [ -r /var/run/mfconnect/updater.pid ]; then
   read -r pid < /var/run/mfconnect/updater.pid
   if [[ "$pid" =~ ^[0-9]+$ ]] && [[ "$(readlink "/proc/$pid/exe" 2>/dev/null || true)" == /usr/local/lib/mfconnect/versions/*/mfconnect-updater ]]; then kill -TERM "$pid"; fi
@@ -107,7 +112,7 @@ update_attribute = '' if args.local else f' pluginURL="{html.escape(base + "/mfc
 manifest = f'''<?xml version="1.0" standalone="yes"?>
 <PLUGIN name="mfconnect" author="MF Connect" version="{html.escape(args.version, quote=True)}" launch="Settings/MFConnect" icon="exchange"{update_attribute} min="7.0.0">
 <!-- mfconnect-endpoint-contract:2 -->
-<CHANGES>{html.escape(args.version)}: Automatic Docker WebUI access follows the device switch. Verified public HTTPS gateway preference with relay fallback; unified entry and signed updates remain compatible. Connector {html.escape(args.connector_version)}; FRP {html.escape(args.frp_version)}.</CHANGES>
+<CHANGES>{html.escape(args.version)}: Existing NAS origin application TCP channel v1 for compatible RaidMate clients. Native NAS administrator authentication; automatic Docker target allowlist; no cloud configuration required. Connector {html.escape(args.connector_version)}; FRP {html.escape(args.frp_version)}.</CHANGES>
 <FILE Run="/bin/bash"><INLINE><![CDATA[{install}]]></INLINE></FILE>
 <FILE Run="/bin/bash" Method="remove"><INLINE><![CDATA[{remove}]]></INLINE></FILE>
 </PLUGIN>

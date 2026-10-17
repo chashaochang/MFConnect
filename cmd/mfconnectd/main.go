@@ -10,12 +10,14 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
 	"mfconnect/internal/connector"
 	"mfconnect/internal/core"
+	"mfconnect/internal/standalone"
 )
 
 func main() {
@@ -28,11 +30,11 @@ func run() error {
 		return errors.New("usage: mfconnectd init|enroll|run|check|version")
 	}
 	if os.Args[1] == "version" {
-		fmt.Println(core.Version)
+		fmt.Println(core.ConnectorVersion)
 		return nil
 	}
 	if os.Args[1] == "capabilities" {
-		fmt.Println(`{"endpoint_contracts":[1,2],"unified_entry":true,"docker_auto_publish":1,"browser_public_direct":1,"launch_navigation":1,"updates":1,"webdav":false}`)
+		fmt.Println(`{"endpoint_contracts":[1,2],"unified_entry":true,"docker_auto_publish":1,"browser_public_direct":1,"launch_navigation":1,"updates":1,"webdav":false,"existing_origin_webui":1}`)
 		return nil
 	}
 	fs := flag.NewFlagSet(os.Args[1], flag.ContinueOnError)
@@ -58,6 +60,8 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	switch os.Args[1] {
+	case "standalone":
+		return standalone.Run(ctx, filepath.Dir(*config), *runDir)
 	case "discover":
 		out, err := connector.InspectDocker(ctx, *config)
 		if err != nil {

@@ -13,10 +13,11 @@ import sys
 TOP_LEVEL = {'.dockerignore', '.env.example', '.gitignore', 'README.md',
              'Makefile', 'Dockerfile', 'compose.yaml', 'go.mod', 'go.sum',
              'LICENSE', 'NOTICE', 'install.sh'}
-DOCUMENTS = {'docs/api.md', 'docs/deployment.md', 'docs/development.md'}
+DOCUMENTS = {'docs/api.md', 'docs/deployment.md', 'docs/development.md',
+             'docs/existing-origin-v1.md'}
 SOURCE_SUFFIXES = {
     'cmd': {'.go'}, 'internal': {'.go'},
-    'plugin': {'.php', '.page', '.css', '.js', '.sh'},
+    'plugin': {'.php', '.page', '.css', '.js', '.sh', '.json'},
     'deploy': {'.sh', '.py', '.json', '.service', '.timer', '.yaml'},
     'scripts': {'.py', '.sh', '.php'},
 }
@@ -28,7 +29,7 @@ SECRETS = (
 
 
 def allowed_path(name):
-    if name in TOP_LEVEL or name in DOCUMENTS or name in ('plugin/rc.mfconnect', '.github/workflows/release.yml', 'deploy/legacy/env.example', 'deploy/compose/env.example', 'deploy/gateway/Dockerfile'):
+    if name in TOP_LEVEL or name in DOCUMENTS or name in ('plugin/rc.mfconnect', '.github/workflows/release.yml', '.github/workflows/plugin-release.yml', 'deploy/legacy/env.example', 'deploy/compose/env.example', 'deploy/gateway/Dockerfile'):
         return True
     path = PurePosixPath(name)
     return (len(path.parts) > 1

@@ -51,15 +51,54 @@ if [ -x "$root/etc/rc.d/rc.mfconnect" ]; then "$root/etc/rc.d/rc.mfconnect" stop
 activate "$destination"
 healthy=true
 "$root/etc/rc.d/rc.mfconnect" start || healthy=false
-if [ -f "$config/config.json" ] && [ ! -f "$config/disabled" ] && $healthy; then
+if [ ! -f "$config/disabled" ] && $healthy; then
   sleep 1
   "$root/etc/rc.d/rc.mfconnect" status >/dev/null || healthy=false
+fi
+if $healthy && [ -z "$root" ]; then
+  if [ -f /usr/local/unraid-api/package.json ] && command -v node >/dev/null 2>&1; then
+    if node "$base/current/register-api.js" install; then
+      # Unraid restores node_modules from its vendor archive at service start.
+      # Use its supported dependency archiver so this module survives restart.
+      /etc/rc.d/rc.unraid-api archive-dependencies || healthy=false
+      if $healthy; then /etc/rc.d/rc.unraid-api restart || healthy=false; fi
+      # Verify the adapter without creating credentials or a new NAS login.
+      api_ready=false
+      allow_stopped=no
+      if [ -f "$config/disabled" ]; then allow_stopped=yes; fi
+      for _ in {1..30}; do
+        if curl --silent --max-time 2 --unix-socket /var/run/unraid-api.sock \
+          http://localhost/graphql/api/mfconnect/v1/capability | \
+          node -e 'let b="";process.stdin.on("data",x=>b+=x);process.stdin.on("end",()=>{try{let j=JSON.parse(b);process.exit(j.protocol===1&&(j.wire_protocol==="tcp"||(process.argv[1]==="yes"&&j.error?.code==="DAEMON_UNAVAILABLE"))?0:1)}catch{process.exit(1)}})' "$allow_stopped"; then
+          api_ready=true; break
+        fi
+        sleep 1
+      done
+      $api_ready || healthy=false
+    else
+      healthy=false
+    fi
+  else
+    echo 'Unraid API runtime unavailable: existing-origin application access requires a compatible Unraid API.' >&2
+    healthy=false
+  fi
 fi
 if ! $healthy; then
   "$root/etc/rc.d/rc.mfconnect" stop || true
   if [ -n "$previous" ] && [ -d "$previous" ]; then
     activate "$previous"
+    if [ -z "$root" ] && command -v node >/dev/null 2>&1; then
+      if [ -f "$previous/register-api.js" ]; then node "$previous/register-api.js" install || true;
+      else node "$destination/register-api.js" remove || true; fi
+      /etc/rc.d/rc.unraid-api archive-dependencies || true
+      /etc/rc.d/rc.unraid-api restart || true
+    fi
     "$root/etc/rc.d/rc.mfconnect" start || true
+  fi
+  if [ -z "$root" ] && [ -z "$previous" ] && command -v node >/dev/null 2>&1; then
+    node "$destination/register-api.js" remove || true
+    /etc/rc.d/rc.unraid-api archive-dependencies || true
+    /etc/rc.d/rc.unraid-api restart || true
   fi
   echo "New version did not start; restored the previous version when available." >&2
   exit 1
@@ -99,5 +138,6 @@ if [ -r "$docker_config" ]; then
     echo '  当前主机访问自定义网络：未启用，使用独立 IP 的应用需要先处理此项。'
   fi
 fi
-echo '  安装完成后，在 RaidMate 的此 NAS → MF Connect 中填写连接 ID、开启远程访问。'
+echo '  支持本通道的 RaidMate 可通过当前 NAS 登录直接打开 Docker WebUI，无需配置云中继。'
+echo '  如需云中继，再在 RaidMate 的 MF Connect 中配置中继服务和连接 ID。'
 echo '  点击“插件”列表里的 MF Connect 图标，或进入“设置 → MF Connect”，可查看状态并管理应用地址。'

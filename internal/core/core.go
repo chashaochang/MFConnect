@@ -22,6 +22,7 @@ import (
 )
 
 const Version = "0.8.1"
+const ConnectorVersion = "0.9.0"
 const FRPVersion = "0.71.1"
 const EasyTierVersion = "2.6.4"
 
