@@ -40,7 +40,7 @@ def main():
     port = 19443
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', port))
-    env = {**os.environ, 'MF_API_HOST': 'api.connect.example.com',
+    env = {**os.environ, 'MF_ENTRY_ORIGIN': '', 'MF_CONNECT_HOST': '', 'MF_API_HOST': 'api.connect.example.com',
            'MF_BASE_DOMAIN': 'apps.connect.example.com', 'MF_TUNNEL_HOST': 'relay.connect.example.com'}
     release = args.release_dir.resolve()
     (release / 'updates').mkdir(mode=0o700, exist_ok=True)

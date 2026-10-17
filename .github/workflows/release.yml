@@ -1,0 +1,44 @@
+name: Build installable release
+on:
+  push:
+    tags: ['v[0-9]*']
+permissions:
+  contents: write
+jobs:
+  linux-amd64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check public source and tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nginx python3-cryptography jq
+          python3 scripts/check_publication.py --ref HEAD
+          python3 scripts/test_publication.py
+          python3 scripts/test_cloud_installer.py
+          python3 scripts/test_unified_deployment.py
+          go test -race ./internal/... ./cmd/...
+      - name: Build binaries, plugin and image
+        run: |
+          make build frp
+          python3 scripts/package_plugin.py --binary dist/mfconnectd --frpc dist/tools/frpc --frp-license dist/tools/FRP-LICENSE --release-base https://downloads.example.invalid/mfconnect --output dist/installer-plugin
+          server_version=$(dist/mfconnect-server version)
+          docker build -t "mfconnect-server:${server_version}-docker.1" .
+          docker save "mfconnect-server:${server_version}-docker.1" | gzip -n > dist/server-image.tar.gz
+          image_id=$(docker image inspect --format '{{.Id}}' "mfconnect-server:${server_version}-docker.1")
+          python3 scripts/package_release.py --version "${GITHUB_REF_NAME#v}" --image dist/server-image.tar.gz --image-id "$image_id" --plugin-dir dist/installer-plugin --output dist/release
+      - name: Verify real Docker and Nginx runtime
+        run: |
+          MF_TEST_SERVER="$PWD/dist/mfconnect-server" MF_TEST_NGINX=/usr/sbin/nginx python3 scripts/test_unified_deployment.py --native
+          sudo python3 scripts/test_cloud_container.py --release-dir "$PWD" --work-dir /tmp/mfconnect-release-container-test
+      - name: Publish immutable release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s\n' '预编译 Linux amd64 部署包，包含云端 Docker 镜像、Unraid 插件和交互式安装向导。使用仓库 README 中的安装命令。' > /tmp/release-notes.txt
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "MF Connect $GITHUB_REF_NAME" --notes-file /tmp/release-notes.txt dist/release/mfconnect-*-deploy.tar.gz dist/release/SHA256SUMS dist/release/bundle.json

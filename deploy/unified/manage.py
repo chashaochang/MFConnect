@@ -57,7 +57,7 @@ def configuration(c):
     c['sans'] = list(dict.fromkeys(names))
     c['ingress'] = list(dict.fromkeys(ingress))
     # These paths are emitted in nginx syntax. Do not allow nginx directives.
-    for key in ['deployment_dir', 'trust_bundle', 'acme'] + (['downloads_root'] if c.get('downloads_root') else []):
+    for key in ['deployment_dir', 'trust_bundle', 'acme'] + (['downloads_root'] if c.get('downloads_root') else []) + (['nginx_binary'] if c.get('nginx_binary') else []):
         value = c[key]
         if not re.fullmatch(r'/[A-Za-z0-9_./-]+', value) or '..' in Path(value).parts:
             raise ValueError('Use an absolute path without spaces or directives: ' + key)
@@ -191,7 +191,7 @@ def certificate(c, renew=False):
     result = subprocess.run(cmd, check=False)
     if renew and result.returncode == 2:  # acme.sh: renewal not due
         return False
-    if result.returncode:
+    if result.returncode not in (0, 2):
         raise RuntimeError('ACME failed; existing certificate remains active')
     # Use the public installation interface, never ~/.acme.sh internal files.
     # This manager, not acme.sh's independent cron, controls activation/reload.
@@ -260,7 +260,8 @@ def activate(c, prepare=False):
 
 def reload_services(c):
     # Existing Go/frps listeners load PEM at startup; renewal needs a restart.
-    run(['nginx', '-t'])
+    nginx_binary = c.get('nginx_binary', 'nginx')
+    run([nginx_binary, '-t'])
     run(['docker', 'compose', 'restart', 'mfconnect'], cwd=c['deployment_dir'])
     for attempt in range(30):
         result = subprocess.run(['docker', 'compose', 'exec', '-T', 'mfconnect', '/usr/local/bin/mfconnect-healthcheck'],
@@ -270,7 +271,7 @@ def reload_services(c):
         if attempt == 29:
             raise RuntimeError('Renewed service did not become healthy; reverting certificate')
         time.sleep(1)
-    run(['nginx', '-s', 'reload'])
+    run([nginx_binary, '-s', 'reload'])
 
 
 def main():

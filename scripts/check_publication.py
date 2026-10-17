@@ -12,7 +12,7 @@ import sys
 
 TOP_LEVEL = {'.dockerignore', '.env.example', '.gitignore', 'README.md',
              'Makefile', 'Dockerfile', 'compose.yaml', 'go.mod', 'go.sum',
-             'LICENSE', 'NOTICE'}
+             'LICENSE', 'NOTICE', 'install.sh'}
 DOCUMENTS = {'docs/api.md', 'docs/deployment.md', 'docs/development.md'}
 SOURCE_SUFFIXES = {
     'cmd': {'.go'}, 'internal': {'.go'},
@@ -28,7 +28,7 @@ SECRETS = (
 
 
 def allowed_path(name):
-    if name in TOP_LEVEL or name in DOCUMENTS or name == 'plugin/rc.mfconnect':
+    if name in TOP_LEVEL or name in DOCUMENTS or name in ('plugin/rc.mfconnect', '.github/workflows/release.yml'):
         return True
     path = PurePosixPath(name)
     return (len(path.parts) > 1

@@ -22,6 +22,7 @@ test: build
 	$(GO) test -buildvcs=false -race ./...
 	python3 scripts/test_plugin.py
 	python3 scripts/test_publication.py
+	python3 scripts/test_cloud_installer.py
 
 publication-check:
 	python3 scripts/check_publication.py
