@@ -8,16 +8,31 @@
 
 ## 自己部署中继
 
-支持**普通 Docker** 和 **Docker Compose**，任选一种。云端、网关、证书管理都运行在容器内，镜像从 GitHub 容器仓库 GHCR 拉取；宿主机不需要安装 Nginx、Python 或 Go。
+支持**普通 Docker** 和 **Docker Compose**，任选一种。中继服务和 HTTPS 网关运行在容器内，镜像从 GitHub 容器仓库 GHCR 拉取。
 
-开始前准备：
+### 第一步：准备服务器、域名和 SSL 证书
 
 - 一台安装了 Docker Engine 的 Linux amd64 服务器，云厂商不限；选择 Compose 时还需 Compose V2。
-- 自己的域名：入口可以是 `example.com` 或 `connect.example.com`，将入口和 `*.入口` 解析到服务器。
+- 一个自己的域名，将服务入口及应用子域名解析到服务器公网 IP。
+- 为这些域名准备好 **SSL 证书（也叫 HTTPS 证书）**，供手机和浏览器通过 HTTPS 访问。
 - 放行 TCP **80、443、17000**。
-- 覆盖入口和 `*.入口` 的已有证书，或者域名 DNS 服务商的授权，用于自动申请证书。
 
-先在服务器准备部署目录和配置，将下方入口改为自己的域名：
+**域名解析、SSL 证书的申请和续期由部署者自行管理，使用什么平台或工具由你决定。下面的安装方式不需要向 MF Connect 提供云账号或 DNS API 密钥。**
+
+证书需要同时包含入口域名和它下面的通配子域名：
+
+| 你打算使用的服务入口 | SSL 证书需要包含的域名 |
+| --- | --- |
+| `https://example.com` | `example.com` 和 `*.example.com` |
+| `https://connect.example.com` | `connect.example.com` 和 `*.connect.example.com` |
+
+`*` 用来覆盖自动分配给 NAS、Docker 应用的子域名，不需要每个应用单独申请证书。只包含 `*.example.com` 的证书不能覆盖 `example.com` 本身，也不能覆盖 `app.connect.example.com`。
+
+### 第二步：填写入口并放入 SSL 证书文件
+
+下面示例使用 MF Connect 自带的 HTTPS 网关，读取你已经申请好的证书。已有反向代理的部署要求见[接入自己的反向代理](docs/deployment.md#接入自己的反向代理)。
+
+在服务器执行以下命令，将 `https://connect.example.com` 改成你要使用的入口：
 
 ```bash
 mkdir -p mfconnect/config
@@ -29,11 +44,28 @@ ENV
 chmod 600 .env
 ```
 
-将证书完整链放入 `config/fullchain.pem`，私钥放入 `config/privkey.pem`，执行 `chmod 600 config/privkey.pem`。没有已有证书时，可以先配置[自动申请证书](docs/deployment.md#自动申请和续期可选)。然后选择以下一种方式。
+`MF_TLS_MODE=provided` 表示读取你提供的 SSL 证书文件。准备下面两个 **PEM 格式**的文件：
 
-### 方式一：普通 Docker
+| 放到服务器上的位置 | 文件内容 |
+| --- | --- |
+| `mfconnect/config/fullchain.pem` | SSL 证书，包含站点证书和中间证书，也就是“完整证书链” |
+| `mfconnect/config/privkey.pem` | 该证书配套的私钥，使用无密码版本 |
 
-直接使用 `docker run`，**不需要 Compose 或安装脚本**。两个容器分别负责 HTTPS 网关和中继服务，共享证书和插件下载目录。
+在刚才创建的 `mfconnect` 目录内执行，将前两个路径换成你实际保存文件的位置：
+
+```bash
+cp "/你的证书目录/证书文件.pem" config/fullchain.pem
+cp "/你的证书目录/私钥文件.key" config/privkey.pem
+chmod 600 config/privkey.pem
+```
+
+`chmod 600` 用于限制私钥文件的读写权限。原文件叫什么名字不影响使用，但内容必须是 PEM 格式；只修改扩展名不能转换证书格式。续期后把新证书和私钥更新到这两个位置，网关会校验并自动加载。
+
+### 第三步：启动服务（二选一）
+
+#### 方式一：普通 Docker
+
+直接使用 `docker run`。两个容器分别负责 HTTPS 网关和中继服务，共享证书和插件下载目录。
 
 首次安装创建专用网络和数据卷：
 
@@ -86,7 +118,7 @@ docker run -d --name mfconnect-docker-server \
 docker ps
 ```
 
-### 方式二：Docker Compose
+#### 方式二：Docker Compose
 
 在准备好 `.env` 和 `config/` 的部署目录下载完整配置，然后启动：
 
@@ -99,18 +131,6 @@ docker compose ps
 ```
 
 完整配置见 [compose.yaml](compose.yaml)，可直接查看或复制。首次启动自动拉取两个镜像，Compose 会等待网关就绪后启动服务端。查看日志使用 `docker compose logs --tail=100`。
-
-### 可选：交互配置向导
-
-如果希望自动填写配置、创建资源并启动容器，可在空目录运行下面的向导。它只调用 Docker，不安装宿主机服务：
-
-```bash
-curl -fL --proto '=https' --proto-redir '=https' --retry 3 \
-  https://raw.githubusercontent.com/chashaochang/MFConnect/v0.8.1/install.sh \
-  -o mfconnect-install.sh && sh mfconnect-install.sh --docker
-```
-
-选择 Compose 时，将最后的 `--docker` 改为 `--compose`。向导询问入口、已有证书的绝对路径或 DNS 授权；凭据只保存在自己的服务器上。自动签证支持 Cloudflare、阿里云 DNS 和腾讯云 DNSPod，按域名使用的 DNS 服务商选择，与服务器在哪里买无关。
 
 镜像仓库无法访问时可用[离线镜像包](docs/deployment.md#离线镜像包)。更新、备份及两种方式的管理命令见[部署与维护](docs/deployment.md)。
 

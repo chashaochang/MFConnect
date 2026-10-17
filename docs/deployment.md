@@ -1,12 +1,12 @@
 # 部署与维护
 
-普通 App / NAS 使用者只需填写已有中继的 HTTPS 入口。本文供自行部署服务器的人使用；不要求腾讯云账号，也不限定服务器供应商。
+普通 App / NAS 使用者只需填写已有中继的 HTTPS 入口。本文供自行部署服务器的人使用。域名解析、SSL 证书的申请和续期由部署者使用自己的平台或工具管理；MF Connect 的部署不绑定云厂商或证书服务商。
 
 ## 安装方式
 
-首次安装按 [README 的标准 Docker 或 Compose 命令](../README.md#自己部署中继) 操作即可。仓库根目录的 `compose.yaml` 是完整新部署模板。交互向导作为可选方式，只下载配置和镜像，不安装宿主机服务；已存在 `mfconnect` 目录时拒绝覆盖。
+首次安装按 [README 的标准 Docker 或 Compose 命令](../README.md#自己部署中继) 操作即可。仓库根目录的 `compose.yaml` 是完整新部署模板。本文使用用户自行准备的 SSL 证书，不需要填写云账号或 DNS API 密钥。
 
-两种方式运行相同的服务：`mfconnect-server` 提供 API 和 FRP，`mfconnect-gateway` 提供 HTTPS 网关、证书管理和插件下载。0.8.1 包含服务端及插件 0.8.1、FRP 0.71.1，仅支持 Linux amd64。宿主机不挂载 Docker socket，不运行证书续期任务。
+两种方式运行相同的服务：`mfconnect-server` 提供 API 和 NAS 中继连接，`mfconnect-gateway` 读取你提供的 SSL 证书，提供 HTTPS 网关和插件下载。0.8.1 包含服务端及插件 0.8.1、FRP 0.71.1，仅支持 Linux amd64。
 
 ### 配置域名
 
@@ -19,7 +19,7 @@
 
 填写实际 DNS zone 下对应的记录名。通配符证书不覆盖入口本身，也不覆盖两层子域。NAS 与应用均采用 D 下的一层子域，无需逐应用申请证书。
 
-服务器防火墙和云安全组放行 TCP 80、443、17000；向导不会修改它们。自动签证还需要能访问证书机构和所选 DNS API。
+按实际端口映射放行服务器防火墙和云安全组。标准示例使用 TCP 80、443、17000：80 用于跳转 HTTPS，443 用于网页和 API，17000 用于 NAS 的加密中继连接。
 
 ## 下载完整配置包
 
@@ -37,7 +37,7 @@ cp .env.example .env
 chmod 600 .env
 ```
 
-编辑 `.env`，将 `MF_ENTRY_ORIGIN` 改为自己的入口，按下面一种方式准备证书，然后选择启动命令：
+编辑 `.env`，将 `MF_ENTRY_ORIGIN` 改为自己的入口，按下节配置你准备好的 SSL 证书，再选择启动命令：
 
 | 运行方式 | 启动命令 | 查看状态 |
 | --- | --- | --- |
@@ -46,49 +46,54 @@ chmod 600 .env
 
 首次启动自动拉取镜像。**同一个实例只选一种运行方式**；两者的数据卷命名不同，不能直接交替运行来迁移数据。
 
-### 使用已有证书（默认）
+## 配置你自己管理的 SSL 证书
 
-`.env` 中配置：
+SSL 证书用于让手机、浏览器与中继建立可信的 HTTPS 连接。申请渠道和续期工具由你选择。MF Connect 需要以下对接信息：
+
+- 证书由系统信任的机构签发，在有效期内。
+- 同一张证书同时包含服务入口和其通配子域名；具体域名见上表。
+- 证书文件包含站点证书及中间证书（完整证书链），另有配套的无密码私钥，均为 PEM 格式。
+
+在 `.env` 中填写自己的入口，并保留读取外部证书的配置：
 
 ```dotenv
 MF_ENTRY_ORIGIN=https://connect.example.com
 MF_TLS_MODE=provided
 ```
 
-将完整证书链放入 `config/fullchain.pem`，对应未加密私钥放入 `config/privkey.pem`。证书应由系统信任的机构签发，并同时覆盖入口与通配域名。
+将文件复制到部署目录，或通过你自己的证书管理工具更新到以下位置：
 
-```bash
-chmod 600 config/privkey.pem
+```text
+mfconnect/
+├── .env
+└── config/
+    ├── fullchain.pem   # SSL 证书及完整证书链
+    └── privkey.pem     # 该证书配套的私钥
 ```
 
-默认配置中的 DNS 凭据只放在 `config/dns.env`，不要写入通用 `.env`。已有证书模式不读取云服务商凭据。证书的申请和续期可由已有的证书工具完成；替换这两个文件后，网关会校验并自动加载。更换文件内容即可，不要单独替换整个 `config` 挂载目录。
+原始文件的名称可以不同，复制时使用上述目标名称。文件格式必须是 PEM；仅修改扩展名不能把其他格式转换为 PEM。在 `mfconnect` 目录执行 `chmod 600 config/privkey.pem`，限制私钥文件的读写权限。
 
-### 自动申请和续期（可选）
+README 的 Docker 命令和 Compose 配置都会将整个 `config` 目录以只读方式挂载给网关。网关检查证书包含的域名、有效性和私钥是否匹配，再提供 HTTPS 服务。
 
-在 `.env` 中设置：
+### 证书续期后怎么更新
 
-```dotenv
-MF_TLS_MODE=acme
-MF_DNS_PROVIDER=cloudflare
-```
+用你自己的工具完成续期后，将新的证书和私钥更新到上述两个文件。网关会定期检查文件变化，校验后自动加载；中继连接可能短暂重连。校验失败时继续使用仍有效的旧证书，错误可从网关日志查看。
 
-按域名实际使用的 DNS 服务商选择，将对应凭据保存在 `config/dns.env`，每行 `字段=值`，不加引号：
+**证书续期需要你自己的工具或流程负责。** 自动加载文件表示 MF Connect 使用更新后的证书，不会替你延长证书有效期。更新目录中的文件即可，不要替换整个 `config` 挂载目录。
 
-| DNS 服务商 | 配置值 | `config/dns.env` 字段 |
-| --- | --- | --- |
-| Cloudflare | `cloudflare` | `CF_Token`，可选 `CF_Zone_ID` / `CF_Account_ID` |
-| 阿里云 DNS | `alidns` | `Ali_Key`、`Ali_Secret` |
-| 腾讯云 DNSPod | `dnspod` | `Tencent_SecretId`、`Tencent_SecretKey` |
+## 接入自己的反向代理
 
-凭据需有目标域名 DNS 查询及 TXT 记录新增、删除权限，不需要服务器管理权限。Cloudflare 可使用限定目标 zone 的 API Token；腾讯云这里使用云 API 密钥，不是旧版 DNSPod ID/Token。
+你可以按自己的运维方式管理域名、SSL 证书和前置反向代理。前置代理接入 MF Connect 时，需要满足以下要求：
 
-```bash
-chmod 600 config/dns.env
-```
+- 同时转发入口域名和其下一层 NAS／应用子域名，保留原始 `Host`。
+- 保留完整请求路径；例如 `/api/v1/...` 不能去掉 `/api` 再转发。
+- 启用 WebSocket 转发，并按所用应用设置上传大小和连接超时。
+- 转发到 MF Connect 的 HTTPS 网关时，保留对应的 TLS 主机名（SNI）并验证上游证书。
+- TCP 17000 是 NAS 中继端口，需要单独可达，不能按普通网页路径代理。
 
-入口的 A 记录由部署者预先配置。网关通过 DNS-01 添加、清理验证 TXT 记录，申请入口及通配证书，随后每 12 小时检查续期。凭据只挂载给网关，不传给业务容器、NAS 插件或手机，也不发送给项目维护者。其他 DNS 服务商可使用已有证书模式。
+如果前置代理已经占用 80／443，调整 MF Connect 网关的端口映射，避免冲突。普通 Docker 修改 `-p` 参数；Compose 修改 `.env` 中的 `MF_HTTP_BIND`、`MF_HTTPS_BIND`，再将前置代理指向调整后的网关地址。
 
-证书和私钥经校验后成对切换，API / FRP 在自身容器内重载，现有中继连接会短暂重连。无证书变化时不重启；校验失败保留原证书。
+**当前 0.8.1 的网关、中继服务和 NAS 隧道仍需要读取 TLS 证书。** 使用前置代理时，也要将相应证书提供给 MF Connect。仅在前置代理配置证书、让 MF Connect 后台完全使用 HTTP 的部署方式目前不支持。证书由谁申请、用什么工具续期，不受此限制。
 
 ## 日常管理与更新
 
@@ -111,7 +116,7 @@ docker compose pull
 docker compose up -d --wait --wait-timeout 660
 ```
 
-使用固定版本标签，不依赖 `latest`。如果使用向导或完整配置包，普通 Docker 还可以运行 `sh docker-run.sh update`：先在 `.env` 中设置两个新镜像地址，它会拉取并重建容器、保留数据。已有镜像的离线重建使用 `sh docker-run.sh recreate`。这些脚本只是标准 Docker 命令的可选封装。
+使用固定版本标签，不依赖 `latest`。如果使用完整配置包，普通 Docker 还可以运行 `sh docker-run.sh update`：先在 `.env` 中设置两个新镜像地址，它会拉取并重建容器、保留数据。已有镜像的离线重建使用 `sh docker-run.sh recreate`。这些脚本只是标准 Docker 命令的可选封装。
 
 若新版修改了配置模板，按该版迁移说明更新，保留 `.env`、`config/` 和数据卷。普通 Docker 的端口、网络由 `docker run` 参数指定；调整网关 IP 时，还需同步修改服务端的 `MF_TRUSTED_PROXY_IPS`。Compose 和管理脚本可通过 `.env` 的端口、网段字段配置。
 
@@ -121,7 +126,7 @@ App 内自动更新需要部署者预先配置更新频道；普通使用者不�
 
 ## 离线镜像包
 
-无法访问 GHCR 时，可从 GitHub Release 下载含镜像的包。向导也支持离线镜像模式，将安装命令改成 `sh mfconnect-install.sh --docker --offline` 或 `sh mfconnect-install.sh --compose --offline`；仍需能访问 GitHub 下载文件。
+无法访问 GHCR 时，可从 GitHub Release 下载含镜像的包。
 
 完全离线的服务器可在其他设备上下载 `mfconnect-0.8.1-docker-amd64.tar.gz` 和 `SHA256SUMS`，传入服务器后执行：
 
@@ -141,8 +146,7 @@ chmod 600 .env
 | 现象 | 检查 |
 | --- | --- |
 | 镜像拉取失败 | 到 GHCR 的网络，或使用离线镜像包 |
-| 缺少或不接受证书 | `config` 中文件名、私钥匹配、完整链，以及入口和 `*.入口` 两项覆盖 |
-| 自动申请失败 | DNS 服务商、凭据权限、DNS 传播及出站网络；修复后重新启动 |
+| 缺少或不接受 SSL 证书 | 检查 `config/fullchain.pem` 和 `config/privkey.pem`，确认 PEM 格式、证书链完整、私钥匹配且证书包含入口及其通配子域名 |
 | 80 / 443 已占用 | 避免重复入口，或在 `.env` 修改 `MF_HTTP_BIND` / `MF_HTTPS_BIND` 接入自己的前置代理 |
 | Docker 网络地址冲突 | 首次部署前同时修改 `MF_NETWORK_SUBNET` 和其中的 `MF_GATEWAY_IP`；已有实例需迁移网络 |
 | 容器正常但外网打不开 | 入口与通配解析、主机防火墙、云安全组及端口映射 |
@@ -154,7 +158,7 @@ chmod 600 .env
 
 已有实例先备份，不要把新安装流程直接套在原数据上。保留连接 ID、设备身份及旧入口，在新入口和证书验证通过、客户端迁移完成前继续提供旧 API。
 
-从宿主机 Nginx 迁到网关容器时，需要安排 80/443 端口交接，并明确导入原业务数据和证书。通用向导不会改动现有站点，也不会自动搬迁 Docker 与 Compose 的数据。接口兼容和客户端迁移字段见 [API 文档](api.md)。
+从宿主机 Nginx 迁到网关容器时，需要安排 80/443 端口交接，并明确导入原业务数据和证书。本文的新安装命令不负责搬迁现有站点或 Docker／Compose 数据。接口兼容和客户端迁移字段见 [API 文档](api.md)。
 
 ## 可选：NAS 公网网页网关
 
@@ -175,6 +179,6 @@ NAS 管理员在插件私有 `/boot/config/plugins/mfconnect/config.json` 中加
 
 这是一份字段片段，不能覆盖整个配置文件。`origin` 必须是完整 HTTPS DNS origin，当前公网端口固定 443，不接受路径或 IP。该域及子域不能与云端 API／应用／NAS 网页域名空间重叠，例如云端为 `connect.example.com`，可用独立的 `direct.example.net` 或 `direct.example.com`。DNS `*.direct.example.net` 指向 NAS 的真实公网地址，路由器将公网 TCP 443 转到 NAS 的 18744；只开放此认证网关，不开放 Docker 内部端口。
 
-网关使用 `*.direct.example.net` 证书：应用使用 `<既有HostKey>.direct.example.net`，NAS 使用 `nas-<设备摘要>.direct.example.net`；均为单层子域，不需要嵌套通配符。`origin` 是域名空间配置，本版本不提供该根域的网页入口。证书及私钥只保存在 NAS，必须由管理员已有的证书管理器签发／续期，本轮不自动操作用户路由器或 DNS。更换证书文件后下次 TLS 握手自动读取；无有效证书或监听失败时云端验证失败并保留中继。
+网关使用 `*.direct.example.net` 证书：应用使用 `<既有HostKey>.direct.example.net`，NAS 使用 `nas-<设备摘要>.direct.example.net`；均为单层子域，不需要嵌套通配符。`origin` 是域名空间配置，本版本不提供该根域的网页入口。证书及私钥保存在 NAS，申请和续期使用部署者自己的工具；公网 DNS 和路由器端口映射也由部署者管理。更换证书文件后下次 TLS 握手自动读取；无有效证书或监听失败时云端验证失败并保留中继。
 
 运行插件连接程序的 `check` 校验配置，再重新连接插件。在 RaidMate 或插件设置页开启“浏览器访问使用公网直连”。开关默认关闭，公网入口未经 HTTPS 和 NAS 身份验证时不会启用直连。此开关与 MF Connect 总开关都保存在服务端，并由插件签名接口回读；公网监听本身不授予任何应用访问权限。
