@@ -5,6 +5,10 @@ on:
     branches: ['feat/unified-entry']
 permissions:
   contents: write
+  packages: write
+concurrency:
+  group: mfconnect-container-publication
+  cancel-in-progress: false
 jobs:
   linux-amd64:
     runs-on: ubuntu-24.04
@@ -32,21 +36,32 @@ jobs:
           docker build -t "mfconnect-server:${server_version}-docker.1" .
           python3 scripts/package_gateway.py --plugin-dir dist/installer-plugin
           docker build -t "mfconnect-gateway:${server_version}" dist/gateway-context
-          docker save "mfconnect-server:${server_version}-docker.1" "mfconnect-gateway:${server_version}" | gzip -n > dist/images.tar.gz
-          server_id=$(docker image inspect --format '{{.Id}}' "mfconnect-server:${server_version}-docker.1")
-          gateway_id=$(docker image inspect --format '{{.Id}}' "mfconnect-gateway:${server_version}")
-          python3 scripts/package_release.py --version "$server_version" --images dist/images.tar.gz --server-image-id "$server_id" --gateway-image-id "$gateway_id" --output dist/release
       - name: Verify native ingress and legacy compatibility
         run: |
           python3 scripts/run_ci_check.py env MF_TEST_SERVER="$PWD/dist/mfconnect-server" MF_TEST_NGINX=/usr/sbin/nginx python3 scripts/test_unified_deployment.py --native
       - name: Verify existing Docker deployment
         run: sudo --preserve-env=GITHUB_STEP_SUMMARY python3 scripts/run_ci_check.py python3 scripts/test_cloud_container.py --release-dir "$PWD" --work-dir /tmp/mfconnect-release-container-test
-      - name: Verify complete Docker Compose deployment
+      - name: Verify Docker and Compose deployments
         run: sudo --preserve-env=GITHUB_STEP_SUMMARY python3 scripts/run_ci_check.py python3 scripts/test_compose_stack.py
+      - name: Publish tested container images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/publish_images.py
+      - name: Package registry deployment and offline images
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          server_version=$(dist/mfconnect-server version)
+          test "$GITHUB_REF_NAME" = "v$server_version"
+          server_image="ghcr.io/chashaochang/mfconnect-server:${server_version}-docker.1"
+          gateway_image="ghcr.io/chashaochang/mfconnect-gateway:${server_version}"
+          docker save "$server_image" "$gateway_image" | gzip -n > dist/images.tar.gz
+          server_id=$(docker image inspect --format '{{.Id}}' "$server_image")
+          gateway_id=$(docker image inspect --format '{{.Id}}' "$gateway_image")
+          python3 scripts/package_release.py --version "$server_version" --images dist/images.tar.gz --server-image-id "$server_id" --gateway-image-id "$gateway_id" --output dist/release
       - name: Publish immutable release assets
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          printf '%s\n' '完整 Docker Compose 部署包：云端、网关、证书管理和插件。默认挂载已有证书，无云账号要求；可选 Cloudflare / 阿里云 DNS / DNSPod 自动申请。宿主机只需 Docker Compose。' > /tmp/release-notes.txt
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "MF Connect $GITHUB_REF_NAME" --notes-file /tmp/release-notes.txt dist/release/mfconnect-*-docker-amd64.tar.gz dist/release/SHA256SUMS dist/release/bundle.json
+          printf '%s\n' '支持普通 Docker 和 Docker Compose，使用 GHCR 公开镜像；提供交互配置向导和离线镜像包。默认使用已有证书，无云账号要求；可选 DNS 自动签证。云端、网关、证书管理和插件均在容器内，宿主机无需安装其他服务。' > /tmp/release-notes.txt
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "MF Connect $GITHUB_REF_NAME" --notes-file /tmp/release-notes.txt dist/release/mfconnect-*.tar.gz dist/release/SHA256SUMS dist/release/bundle.json

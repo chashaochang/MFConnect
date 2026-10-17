@@ -3,6 +3,7 @@ FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9
 
 ARG MF_VERSION=0.7.2
 LABEL org.opencontainers.image.title="MF Connect server" \
+      org.opencontainers.image.source="https://github.com/chashaochang/MFConnect" \
       org.opencontainers.image.version="${MF_VERSION}-docker.1"
 
 RUN apk add --no-cache ca-certificates curl jq openssl \

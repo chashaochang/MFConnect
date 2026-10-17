@@ -29,6 +29,12 @@ python3 scripts/test_unified_deployment.py --native
 
 本地测试不能代替公网证书、真实 NAS、客户端登录或媒体播放验收。实际环境的测试结果留在运行环境中，不写进公共 README。
 
+## 兼容部署与发行接入
+
+`deploy/compose/compose.yaml` 是面向新部署的完整容器模板，`deploy/docker/run.sh` 提供不依赖 Compose 的同等部署。源码根目录的 `compose.yaml` 保留宿主机 Nginx 部署的兼容构建与测试入口；公开部署包使用完整模板，不要求使用者运行兼容测试或自行编译。
+
+通用 DNS/TLS 管理工具 `deploy/unified/manage.py` 继续供已有部署迁移使用。App 更新协议支持签名发行物和独立更新执行器；接入方配置签名公钥、发行目录和更新权限，实际签名私钥与部署命令留在自己的私有环境。普通安装步骤不包含这些发行操作。
+
 ## 打包
 
 ```bash
@@ -39,9 +45,11 @@ make plugin RELEASE_BASE=https://downloads.example.com/mfconnect
 
 `plugin-local` 生成离线测试包；在线清单引用指定发布地址。`docker-bundle` 生成 Compose 构建目录包，不是可直接 `docker load` 的镜像归档。版本、载荷摘要和签名必须与实际程序一致。
 
-完整 Docker 部署测试为 `sudo python3 scripts/test_compose_stack.py`，使用独立项目、数据卷、测试 CA 和示例域名，覆盖无云凭据启动、证书轮换和配置保留。
+完整部署测试为 `sudo python3 scripts/test_compose_stack.py`，实际运行普通 Docker 和 Compose，使用独立项目、数据卷、测试 CA 和示例域名，覆盖无云凭据启动、证书轮换和配置保留。普通 Docker 还验证重复启动和重建容器保留身份。
 
-GitHub 的 `v*` 发行标签触发 `.github/workflows/release.yml`：执行检查、编译程序、构建镜像和插件、测试真实 Docker / Nginx，再发布部署包和 SHA-256 清单。`scripts/package_release.py` 使用明确文件名单打包，不复制整个工作目录。第三方 acme.sh 固定摘要并保留完整源码和许可证。发布后的固定版本文件不覆盖，修订使用新标签和新文件名。
+GitHub Actions 验证后用工作流临时 Token 发布 GHCR 镜像，无需把维护者凭据写入源码。分支只发布带提交 SHA 的候选标签；`v*` 标签与程序版本一致时，发布固定版本镜像、轻量配置包、离线镜像包和 SHA-256 清单。镜像首次发布后，包所有者需将两个包设为公开；工作流在匿名拉取成功前不创建正式 Release。已有标签的镜像内容不同会拒绝覆盖。
+
+`scripts/package_release.py` 使用明确文件名单打包，不复制整个工作目录。第三方 acme.sh 固定摘要并保留完整源码和 GPL 许可证，位于网关镜像 `/opt/acme/`。发布后的固定版本文件不覆盖，修订使用新标签和新文件名。
 
 ## 仓库与本地文件
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package prebuilt server/gateway images and a portable Docker Compose project."""
+"""Package a registry-backed Docker deployment and an optional offline bundle."""
 import argparse
 import gzip
 import hashlib
@@ -24,32 +24,37 @@ def main():
         parser.error('invalid version or image identity')
     files = {}
     for source, target in (('deploy/compose/compose.yaml', 'compose.yaml'), ('deploy/compose/env.example', '.env.example'),
+                           ('deploy/docker/run.sh', 'docker-run.sh'),
                            ('README.md', 'README.md'), ('docs/deployment.md', 'docs/deployment.md'),
                            ('docs/api.md', 'docs/api.md'), ('docs/development.md', 'docs/development.md')):
         files[target] = (ROOT / source).read_bytes()
     files['config/.keep'] = b''
-    files['images.tar.gz'] = args.images.read_bytes()
     metadata = {'schema_version': 2, 'release_version': args.version, 'architecture': 'linux/amd64',
-                'images': {'mfconnect-server:' + args.version + '-docker.1': args.server_image_id,
-                           'mfconnect-gateway:' + args.version: args.gateway_image_id},
-                'host_requirements': ['Docker Engine', 'Docker Compose V2'],
+                'images': {'ghcr.io/chashaochang/mfconnect-server:' + args.version + '-docker.1': args.server_image_id,
+                           'ghcr.io/chashaochang/mfconnect-gateway:' + args.version: args.gateway_image_id},
+                'host_requirements': {'docker': ['Docker Engine'], 'compose': ['Docker Engine', 'Docker Compose V2']},
                 'default_tls': 'provided', 'optional_dns_providers': ['cloudflare', 'alidns', 'dnspod']}
     files['bundle.json'] = (json.dumps(metadata, indent=2) + '\n').encode()
-    files['CONTENTS.sha256'] = ''.join(hashlib.sha256(data).hexdigest() + '  ' + name + '\n'
-                                      for name,data in sorted(files.items())).encode()
     args.output.mkdir(parents=True, exist_ok=True)
-    target = args.output / ('mfconnect-' + args.version + '-docker-amd64.tar.gz')
-    if target.exists(): parser.error('release file already exists; use a new output directory or version')
-    with target.open('wb') as output:
-        with gzip.GzipFile(filename='', fileobj=output, mode='wb', mtime=0) as zipped:
-            with tarfile.open(fileobj=zipped, mode='w') as archive:
-                for name, data in sorted(files.items()):
-                    entry = tarfile.TarInfo('mfconnect/' + name)
-                    entry.size, entry.mode, entry.mtime = len(data), 0o644, 0
-                    archive.addfile(entry, io.BytesIO(data))
-    (args.output / 'SHA256SUMS').write_text(hashlib.sha256(target.read_bytes()).hexdigest() + '  ' + target.name + '\n')
+    archives = {}
+    for suffix in ('deploy', 'docker-amd64'):
+        target = args.output / ('mfconnect-' + args.version + '-' + suffix + '.tar.gz')
+        if target.exists(): parser.error('release file already exists; use a new output directory or version')
+        content = dict(files)
+        if suffix == 'docker-amd64': content['images.tar.gz'] = args.images.read_bytes()
+        content['CONTENTS.sha256'] = ''.join(hashlib.sha256(data).hexdigest() + '  ' + name + '\n'
+                                            for name,data in sorted(content.items())).encode()
+        with target.open('wb') as output:
+            with gzip.GzipFile(filename='', fileobj=output, mode='wb', mtime=0) as zipped:
+                with tarfile.open(fileobj=zipped, mode='w') as archive:
+                    for name, data in sorted(content.items()):
+                        entry = tarfile.TarInfo('mfconnect/' + name)
+                        entry.size, entry.mode, entry.mtime = len(data), 0o644, 0
+                        archive.addfile(entry, io.BytesIO(data))
+        archives[target.name] = hashlib.sha256(target.read_bytes()).hexdigest()
+        print('Built ' + target.name)
+    (args.output / 'SHA256SUMS').write_text(''.join(digest + '  ' + name + '\n' for name,digest in sorted(archives.items())))
     (args.output / 'bundle.json').write_text(json.dumps(metadata, indent=2) + '\n')
-    print('Built ' + target.name)
 
 
 if __name__ == '__main__': main()

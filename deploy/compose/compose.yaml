@@ -2,8 +2,8 @@ name: mfconnect
 
 services:
   gateway:
-    image: mfconnect-gateway:${MF_GATEWAY_TAG:-0.7.2}
-    pull_policy: never
+    image: ${MF_GATEWAY_IMAGE:-ghcr.io/chashaochang/mfconnect-gateway:0.7.2}
+    pull_policy: missing
     platform: linux/amd64
     init: true
     restart: unless-stopped
@@ -40,8 +40,8 @@ services:
       options: {max-size: 10m, max-file: "3"}
 
   mfconnect:
-    image: mfconnect-server:${MF_IMAGE_TAG:-0.7.2-docker.1}
-    pull_policy: never
+    image: ${MF_SERVER_IMAGE:-ghcr.io/chashaochang/mfconnect-server:0.7.2-docker.1}
+    pull_policy: missing
     platform: linux/amd64
     init: true
     restart: unless-stopped

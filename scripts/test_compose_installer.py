@@ -128,7 +128,39 @@ class ComposeInstallerTests(unittest.TestCase):
         for forbidden in ('apt-get','dnf ', 'systemctl','/etc/nginx','sudo ', 'python3 '):
             self.assertNotIn(forbidden,source)
         subprocess.run(['sh','-n',ROOT / 'install.sh'],check=True)
+        subprocess.run(['sh','-n',ROOT / 'deploy/docker/run.sh'],check=True)
         subprocess.run(['sh','-n',ROOT / 'deploy/docker/watch-tls.sh'],check=True)
+
+    def test_plain_docker_does_not_execute_env_values_or_touch_unowned_resources(self):
+        launcher = self.root / 'docker-run.sh'
+        launcher.write_bytes((ROOT / 'deploy/docker/run.sh').read_bytes())
+        marker = self.root / 'executed'
+        (self.root / '.env').write_text('MF_ENTRY_ORIGIN=https://example.test\nMF_SERVER_IMAGE=$(touch ' + str(marker) + ')\n')
+        tools = self.root / 'bin'; tools.mkdir()
+        docker = tools / 'docker'
+        docker.write_text('#!/bin/sh\ncase "$1" in info) exit 0;; container) echo unrelated-owner; exit 0;; *) exit 99;; esac\n')
+        docker.chmod(0o755)
+        result = subprocess.run(['sh',launcher,'down'],env={**os.environ,'PATH':str(tools) + ':' + os.environ['PATH']},capture_output=True,text=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Refusing to modify an unrelated container',result.stderr)
+        self.assertFalse(marker.exists())
+
+    def test_deployment_archive_excludes_images_and_offline_bundle_contains_them(self):
+        images = self.root / 'images.tar.gz'; images.write_bytes(b'test-image-archive')
+        output = self.root / 'release'
+        subprocess.run([sys.executable,ROOT / 'scripts/package_release.py','--version','0.7.2',
+                        '--images',images,'--server-image-id','sha256:' + '1'*64,
+                        '--gateway-image-id','sha256:' + '2'*64,'--output',output],check=True,stdout=subprocess.PIPE)
+        for suffix in ('deploy','docker-amd64'):
+            with tarfile.open(output / ('mfconnect-0.7.2-' + suffix + '.tar.gz')) as archive:
+                names = archive.getnames()
+                self.assertIn('mfconnect/docker-run.sh',names)
+                self.assertIn('mfconnect/compose.yaml',names)
+                self.assertEqual('mfconnect/images.tar.gz' in names,suffix == 'docker-amd64')
+                manifest = archive.extractfile('mfconnect/CONTENTS.sha256').read().decode()
+                for line in manifest.splitlines():
+                    digest, name = line.split('  ',1)
+                    self.assertEqual(hashlib.sha256(archive.extractfile('mfconnect/' + name).read()).hexdigest(),digest)
 
 
 if __name__ == '__main__': unittest.main()
