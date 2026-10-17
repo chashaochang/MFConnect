@@ -1,0 +1,17 @@
+[Unit]
+Description=MF Connect verified Docker update worker
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/srv/mfconnect/ops/mfconnect-updater --config /srv/mfconnect/ops/updater.json
+Restart=always
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

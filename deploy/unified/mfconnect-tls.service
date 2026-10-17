@@ -1,0 +1,10 @@
+[Unit]
+Description=Renew and activate MF Connect entry and wildcard certificate
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+UMask=0077
+EnvironmentFile=/etc/mfconnect/dns.env
+ExecStart=/usr/bin/python3 /srv/mfconnect/deploy/unified/manage.py renew --config /etc/mfconnect/unified.json --apply

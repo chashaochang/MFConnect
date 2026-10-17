@@ -1,0 +1,27 @@
+[Unit]
+Description=MF Connect control API and application relay
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=mfconnect
+Group=mfconnect
+WorkingDirectory=/var/lib/mfconnect
+ExecStart=/opt/mfconnect/mfconnect-server serve --dir /var/lib/mfconnect
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+KillMode=control-group
+UMask=0077
+StateDirectory=mfconnect
+StateDirectoryMode=0700
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

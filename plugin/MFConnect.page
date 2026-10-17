@@ -1,0 +1,44 @@
+Menu="Settings"
+Title="MF Connect"
+Icon="exchange"
+---
+<?php
+function mf_escape($value) { return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
+$mfVars = @parse_ini_file('/var/local/emhttp/var.ini');
+?>
+<link rel="stylesheet" href="/plugins/mfconnect/assets/settings.css">
+<div id="mf-settings" data-csrf="<?=mf_escape($mfVars['csrf_token'] ?? '')?>">
+<h2>MF Connect</h2>
+<p>让 RaidMate 通过中继访问这台 NAS 上的应用。</p>
+<p id="mf-message" role="status" aria-live="polite">正在读取连接设置…</p>
+<section class="mf-panel">
+<h3>连接状态</h3><dl id="mf-status"></dl>
+<div class="mf-actions"><button type="button" id="mf-refresh">刷新状态</button><button type="button" id="mf-start">启动连接</button><button type="button" id="mf-restart">重新连接</button><button type="button" id="mf-stop">停止连接</button></div>
+</section>
+<section class="mf-panel" id="mf-binding" hidden>
+<h3>接入自己的云服务器</h3>
+<p>在 RaidMate 填入自己的服务器地址，App 会自动取得安装链接并完成接入。之后在 RaidMate 中开启 MF Connect 并填写连接 ID。</p>
+</section>
+<section class="mf-panel" id="mf-connect-details" hidden>
+<h3>远程访问</h3>
+<dl id="mf-connect-status"></dl>
+<p>连接 ID 和远程访问开关在 RaidMate 的此 NAS → MF Connect 设置中修改，保存后会自动同步到这里。</p>
+<p id="mf-entry"></p>
+</section>
+<section class="mf-panel" id="mf-apps" hidden>
+<h3>自动发现的 Docker 应用</h3>
+<p>每 30 秒读取容器 WebUI。新应用需启用远程访问后才能通过中继打开；没有 WebUI 的容器会显示原因。</p>
+<p id="mf-discovery-status"></p><div id="mf-docker-apps"></div>
+<h3>手动配置的应用</h3>
+<p>填写应用的 HTTP 或 HTTPS 地址，例如 http://192.168.50.96:8096。新增、修改或删除应用后，点击保存。</p>
+<p>修改应用会关闭它的远程访问并使旧会话失效；同步完成后可重新启用。</p>
+<div id="mf-targets"></div>
+<div class="mf-actions"><button type="button" id="mf-add">添加应用</button><button type="button" id="mf-save">保存应用</button></div>
+</section>
+<section class="mf-panel">
+<h3>独立 IP 应用的网络要求</h3>
+<p>中继转发前，Unraid 主机必须能够访问应用的 IP 和端口。手机或电脑能在内网打开应用，不代表 Unraid 主机也能访问它。</p>
+<p>Docker 应用使用 br0、ipvlan 或 macvlan 独立 IP 时，请在<strong>设置 → Docker → 高级视图 → 主机访问自定义网络（Host access to custom networks）</strong>中设为<strong>启用 / Enabled</strong>。</p>
+<p>当前开关状态：<strong id="mf-host-access">正在读取</strong>。修改 Docker 设置可能需要先停止 Docker，请安排好容器停机时间。</p>
+</section></div>
+<script src="/plugins/mfconnect/assets/settings.js"></script>

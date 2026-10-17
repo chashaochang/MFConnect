@@ -1,0 +1,9 @@
+{
+  "entry_origin": "https://example.com",
+  "zone": "example.com",
+  "ipv4": "203.0.113.10",
+  "dns_provider": "tencent",
+  "deployment_dir": "/srv/mfconnect",
+  "trust_bundle": "/etc/ssl/certs/ca-certificates.crt",
+  "acme": "/root/.acme.sh/acme.sh"
+}

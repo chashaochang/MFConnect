@@ -1,0 +1,34 @@
+/.local/
+/dist/
+/state/
+*.test
+coverage.out
+__pycache__/
+
+# Local deployment credentials and conversation attachments.
+/.env
+/certs/
+/updates/
+/.rcodex/
+
+# Private deployment material and generated archives never belong in source control.
+/.agents/
+/.codex/
+/.aws/
+/.ssh/
+/secrets/
+/backups/
+/.env.*
+!/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.bundle
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.db
+*.sqlite
+*.sqlite3

@@ -1,0 +1,61 @@
+#!/bin/bash
+set -euo pipefail
+root=${MFCONNECT_TEST_ROOT:-}
+base="$root/usr/local/lib/mfconnect"
+config="$root/boot/config/plugins/mfconnect/config.json"
+run="$root/var/run/mfconnect"
+mkdir -p "$run"
+chmod 700 "$run"
+exec 9>"$run/control.lock"
+flock -x 9
+
+running() {
+  [ -f "$run/daemon.pid" ] || return 1
+  local pid exe
+  read -r pid < "$run/daemon.pid"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  exe=$(readlink "/proc/$pid/exe" 2>/dev/null) || return 1
+  [[ "$exe" == "$base/versions/"*/mfconnectd ]]
+}
+
+start() {
+  if running; then return 0; fi
+  if [ -f "$root/boot/config/plugins/mfconnect/disabled" ]; then
+    echo "mfconnect: disabled in settings"
+    return 0
+  fi
+  if [ ! -f "$config" ]; then
+    echo "mfconnect: configuration required"
+    return 0
+  fi
+  "$base/current/mfconnectd" check --config "$config" --require-transport frp
+  # Runtime log is rotated at each start and never written to the flash drive.
+  if [ -f "$run/daemon.log" ]; then mv -f "$run/daemon.log" "$run/daemon.log.previous"; fi
+  nohup "$base/current/mfconnectd" run --config "$config" --run-dir "$run" \
+    --frpc "$base/current/frpc" >>"$run/daemon.log" 2>&1 8>&- 9>&- &
+  echo "$!" > "$run/daemon.pid"
+  chmod 600 "$run/daemon.pid"
+}
+
+stop() {
+  if running; then
+    local pid
+    read -r pid < "$run/daemon.pid"
+    kill -TERM "$pid"
+    for _ in {1..100}; do
+      if ! running; then break; fi
+      sleep 0.1
+    done
+    if running; then kill -KILL "$pid"; fi
+  fi
+  rm -f "$run/daemon.pid"
+}
+
+case "${1:-status}" in
+  start) start ;;
+  stop) stop ;;
+  restart) stop; start ;;
+  status) if running; then echo "running"; else echo "stopped"; exit 1; fi ;;
+  *) echo "Usage: $0 start|stop|restart|status" >&2; exit 2 ;;
+esac

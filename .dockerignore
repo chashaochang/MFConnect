@@ -1,0 +1,13 @@
+**
+!Dockerfile
+!.dockerignore
+!deploy/
+!deploy/docker/
+!deploy/docker/entrypoint.sh
+!deploy/docker/healthcheck.sh
+!dist/
+!dist/mfconnect-server
+!dist/tools/
+!dist/tools/frps
+!dist/tools/FRP-LICENSE
+!dist/tools/FRP_VERSION
