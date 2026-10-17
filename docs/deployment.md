@@ -148,7 +148,7 @@ chmod 600 .env
 | 容器正常但外网打不开 | 入口与通配解析、主机防火墙、云安全组及端口映射 |
 | Existing entry differs | 配置与已有数据不符；恢复原入口或执行明确迁移，不删除数据重新安装 |
 
-安装插件使用 `https://入口/downloads/mfconnect/mfconnect.plg`，设置位于 **Settings → MF Connect**。App 可请求一次性安装链接。Docker WebUI 默认自动发现，由用户选择是否发布；独立 IP 容器需允许 Unraid 主机访问。
+安装插件使用 `https://入口/downloads/mfconnect/mfconnect.plg`，设置位于 **Settings → MF Connect**。App 可请求一次性安装链接。开启 MF Connect 后，已声明 WebUI 且目标有效的 Docker 应用自动接入，每 30 秒重新扫描；新增或重建应用自动关联，无需逐个发布。关闭 MF Connect 后远程访问关闭。独立 IP 容器需允许 Unraid 主机访问。
 
 ## 已有部署迁移
 

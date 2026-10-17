@@ -120,7 +120,7 @@ curl -fL --proto '=https' --proto-redir '=https' --retry 3 \
 2. 输入 `https://你的入口/downloads/mfconnect/mfconnect.plg`，点击安装。
 3. 打开 **Settings → MF Connect**，或在支持本协议的 RaidMate 中配置同一个入口和连接 ID。
 
-支持自动安装的客户端也可取得一次性安装链接，无需邀请码或云账号。Docker WebUI 会自动发现，由用户选择发布哪些应用；应用本身的登录仍然有效。
+支持自动安装的客户端也可取得一次性安装链接，无需邀请码或云账号。开启 MF Connect 后，所有已声明 WebUI 且目标有效的 Docker 应用会自动接入，新增或重建应用也会自动关联，无需逐个发布。关闭 MF Connect 后远程访问关闭；中继认证与应用本身的登录仍然有效。
 
 ## 地址与能力
 
