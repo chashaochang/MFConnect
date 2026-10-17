@@ -237,7 +237,7 @@ func TestLaunchNavigationContractVerifiedExactOriginsAndSingleUse(t *testing.T) 
 			t.Fatal("navigation permission not enforced")
 		}
 		if contract == 1 {
-			if !strings.Contains(result.Body.String(), "one.direct.example.net/_mf/bootstrap") || strings.Contains(result.Body.String(), "two.direct.example.net") {
+			if result.Header().Get("Referrer-Policy") != "strict-origin" || !strings.Contains(result.Body.String(), "one.direct.example.net/_mf/bootstrap") || strings.Contains(result.Body.String(), "two.direct.example.net") {
 				t.Fatal("wrong application route")
 			}
 			if f.app.maybePublicApp(httptest.NewRecorder(), request, state.Devices["dev_one"], state.Services["svc_one"], session, sessionKey) {

@@ -176,7 +176,7 @@ func relayEscape(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-var routePage = template.Must(template.New("route").Parse(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>MF Connect</title><p>正在连接… <a href="{{.Fallback}}">使用中继</a></p><form id="next" method="post" action="{{.Action}}"><input type="hidden" name="ticket" value="{{.Ticket}}"><input type="hidden" name="nonce" value="{{.Nonce}}"></form><script nonce="{{.CSP}}">const fallback={{.Fallback}},probe={{.Probe}},destination={{.Destination}},device={{.Device}},expires=Number({{.Expires}});let finished=false;const controller=new AbortController();const timer=setTimeout(()=>{controller.abort();finish(false)},1800);function finish(ok){if(finished)return;finished=true;clearTimeout(timer);if(!ok||(expires&&Date.now()>=expires*1000))location.replace(fallback);else if(destination)location.replace(destination);else document.getElementById('next').submit()}fetch(probe,{mode:'cors',credentials:'omit',cache:'no-store',redirect:'error',signal:controller.signal}).then(r=>{if(!r.ok)throw Error();return r.json()}).then(j=>finish(j.schema_version===1&&j.device_id===device)).catch(()=>finish(false));</script><noscript><p>浏览器未启用脚本，请点击“使用中继”。</p></noscript></html>`))
+var routePage = template.Must(template.New("route").Parse(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="referrer" content="strict-origin"><title>MF Connect</title><p>正在连接… <a href="{{.Fallback}}">使用中继</a></p><form id="next" method="post" action="{{.Action}}"><input type="hidden" name="ticket" value="{{.Ticket}}"><input type="hidden" name="nonce" value="{{.Nonce}}"></form><script nonce="{{.CSP}}">const fallback={{.Fallback}},probe={{.Probe}},destination={{.Destination}},device={{.Device}},expires=Number({{.Expires}});let finished=false;const controller=new AbortController();const timer=setTimeout(()=>{controller.abort();finish(false)},1800);function finish(ok){if(finished)return;finished=true;clearTimeout(timer);if(!ok||(expires&&Date.now()>=expires*1000))location.replace(fallback);else if(destination)location.replace(destination);else document.getElementById('next').submit()}fetch(probe,{mode:'cors',credentials:'omit',cache:'no-store',redirect:'error',signal:controller.signal}).then(r=>{if(!r.ok)throw Error();return r.json()}).then(j=>finish(j.schema_version===1&&j.device_id===device)).catch(()=>finish(false));</script><noscript><p>浏览器未启用脚本，请点击“使用中继”。</p></noscript></html>`))
 
 func writeRoutePage(w http.ResponseWriter, r *http.Request, d store.Device, host, ticket, nonce string, deadline ...int64) {
 	origin := "https://" + host
@@ -191,7 +191,7 @@ func writeRoutePage(w http.ResponseWriter, r *http.Request, d store.Device, host
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Referrer-Policy", "strict-origin")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'nonce-"+csp+"'; connect-src "+origin+"; form-action "+origin+"; base-uri 'none'; frame-ancestors 'none'")
 	_ = routePage.Execute(w, map[string]string{"Fallback": "/_mf/relay?path=" + url.QueryEscape(r.URL.RequestURI()), "Action": origin + "/_mf/bootstrap", "Probe": origin + "/_mf/public-probe?nonce=" + core.Random(), "Destination": destination, "Device": d.ID, "Ticket": ticket, "Nonce": nonce, "CSP": csp, "Expires": fmt.Sprint(expires)})
 }
