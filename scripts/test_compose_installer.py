@@ -35,6 +35,7 @@ class ComposeInstallerTests(unittest.TestCase):
             self.assertEqual(c['sans'], [host, '*.' + host])
             self.assertEqual(gateway.credentials(c, self.root / 'nonexistent'), {})
             rendered = gateway.nginx_config(c)
+            self.assertIn('http {\naccess_log off;', rendered)
             self.assertIn('resolver 127.0.0.11', rendered)
             self.assertIn('proxy_ssl_name $host;', rendered)
             self.assertIn('proxy_pass https://$mf_upstream;', rendered)

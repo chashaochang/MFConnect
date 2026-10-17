@@ -139,7 +139,7 @@ def prepare_tls(c, supplied=CONFIG, renew=False):
 
 
 def nginx_config(c):
-    return ('pid /run/mfconnect-nginx.pid;\nerror_log /dev/stderr warn;\nuser nginx;\nevents {}\nhttp {\n'
+    return ('pid /run/mfconnect-nginx.pid;\nerror_log /dev/stderr warn;\nuser nginx;\nevents {}\nhttp {\naccess_log off;\n'
             'client_body_temp_path /tmp/body;\nproxy_temp_path /tmp/proxy;\n'
             'fastcgi_temp_path /tmp/fastcgi;\nuwsgi_temp_path /tmp/uwsgi;\nscgi_temp_path /tmp/scgi;\n'
             + manage.nginx(c) + '\n}\n')
@@ -158,8 +158,9 @@ def serve():
         prepare_tls(c)
         config = Path('/run/mfconnect-nginx.conf')
         write(config, nginx_config(c), 0o644)
-        subprocess.run(['nginx', '-c', str(config), '-t'], check=True)
-        process = subprocess.Popen(['nginx', '-c', str(config), '-g', 'daemon off;'])
+        nginx = ['nginx', '-e', 'stderr', '-c', str(config)]
+        subprocess.run(nginx + ['-t'], check=True)
+        process = subprocess.Popen(nginx + ['-g', 'daemon off;'])
         stopping = False
         def stop(*_):
             nonlocal stopping
@@ -179,13 +180,13 @@ def serve():
                     previous = os.readlink(certs / 'live')
                     try:
                         if prepare_tls(c, renew=True):
-                            subprocess.run(['nginx', '-c', str(config), '-t'], check=True)
-                            subprocess.run(['nginx', '-c', str(config), '-s', 'reload'], check=True)
+                            subprocess.run(nginx + ['-t'], check=True)
+                            subprocess.run(nginx + ['-s', 'reload'], check=True)
                             print('Verified TLS files activated; backend will reload its API and tunnel.', flush=True)
                     except Exception as error:
                         if os.readlink(certs / 'live') != previous:
                             manage.point_live(certs, previous)
-                            subprocess.run(['nginx', '-c', str(config), '-s', 'reload'], check=False)
+                            subprocess.run(nginx + ['-s', 'reload'], check=False)
                         print('TLS refresh failed; previous certificate retained (' + type(error).__name__ + ').', file=sys.stderr, flush=True)
                     deadline = time.monotonic() + interval
                 time.sleep(1)
