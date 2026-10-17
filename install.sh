@@ -29,5 +29,6 @@ tar -xzf "$work/$name" --no-same-owner
 cd mfconnect
 sha256sum -c CONTENTS.sha256
 docker load --input images.tar.gz
-docker run --rm -it --network none -v "$PWD:/output" "mfconnect-gateway:$version" configure
+docker run --rm -it --network none --user "$(id -u):$(id -g)" \
+    -v "$PWD:/output:z" "mfconnect-gateway:$version" configure
 echo '准备好域名解析和证书后，在 mfconnect 目录执行：docker compose up -d'

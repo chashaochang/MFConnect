@@ -26,7 +26,7 @@ services:
       - gateway:/state
       - tls:/state/certs
       - updates:/updates
-      - ./config:/config:ro
+      - ./config:/config:ro,z
     networks:
       default:
         ipv4_address: ${MF_GATEWAY_IP:-172.31.253.2}

@@ -36,11 +36,13 @@ jobs:
           server_id=$(docker image inspect --format '{{.Id}}' "mfconnect-server:${server_version}-docker.1")
           gateway_id=$(docker image inspect --format '{{.Id}}' "mfconnect-gateway:${server_version}")
           python3 scripts/package_release.py --version "$server_version" --images dist/images.tar.gz --server-image-id "$server_id" --gateway-image-id "$gateway_id" --output dist/release
-      - name: Verify real Docker and Nginx runtime
+      - name: Verify native ingress and legacy compatibility
         run: |
-          MF_TEST_SERVER="$PWD/dist/mfconnect-server" MF_TEST_NGINX=/usr/sbin/nginx python3 scripts/test_unified_deployment.py --native
-          sudo python3 scripts/test_cloud_container.py --release-dir "$PWD" --work-dir /tmp/mfconnect-release-container-test
-          sudo --preserve-env=GITHUB_STEP_SUMMARY python3 scripts/test_compose_stack.py
+          python3 scripts/run_ci_check.py env MF_TEST_SERVER="$PWD/dist/mfconnect-server" MF_TEST_NGINX=/usr/sbin/nginx python3 scripts/test_unified_deployment.py --native
+      - name: Verify existing Docker deployment
+        run: sudo --preserve-env=GITHUB_STEP_SUMMARY python3 scripts/run_ci_check.py python3 scripts/test_cloud_container.py --release-dir "$PWD" --work-dir /tmp/mfconnect-release-container-test
+      - name: Verify complete Docker Compose deployment
+        run: sudo --preserve-env=GITHUB_STEP_SUMMARY python3 scripts/run_ci_check.py python3 scripts/test_compose_stack.py
       - name: Publish immutable release assets
         if: startsWith(github.ref, 'refs/tags/v')
         env:
