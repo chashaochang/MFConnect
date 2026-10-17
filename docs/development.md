@@ -1,5 +1,7 @@
 # 开发
 
+正式主分支为 `master`。需求在单独分支开发，验证后合并到 `master`；版本发布使用不可变的 `v*` 标签。
+
 ## 源码结构
 
 | 目录 | 内容 |
@@ -47,7 +49,11 @@ make plugin RELEASE_BASE=https://downloads.example.com/mfconnect
 
 完整部署测试为 `sudo python3 scripts/test_compose_stack.py`，实际执行 README 的 Docker 命令、普通 Docker 管理脚本和 Compose，使用独立项目、数据卷、测试 CA 和示例域名，覆盖无云凭据启动、证书轮换和配置保留。普通 Docker 还验证重复启动和重建容器保留身份。
 
-GitHub Actions 验证后用工作流临时 Token 发布 GHCR 镜像，无需把维护者凭据写入源码。分支只发布带提交 SHA 的候选标签；`v*` 标签与程序版本一致时，发布固定版本镜像、轻量配置包、离线镜像包和 SHA-256 清单。镜像首次发布后，包所有者需将两个包设为公开；工作流在匿名拉取成功前不创建正式 Release。已有标签的镜像内容不同会拒绝覆盖。
+GitHub Actions 在 `master` 或 `v*` 标签推送后执行验证，再用工作流临时 Token 发布 GHCR 镜像，无需把维护者凭据写入源码。`master` 只发布带提交 SHA 的候选镜像；`v*` 标签与程序版本一致时，发布固定版本镜像、轻量配置包、离线镜像包、独立 Unraid `.plg` 及程序包。镜像首次发布后，包所有者需将两个包设为公开；工作流在匿名拉取成功前不创建正式 Release。已有标签的镜像内容不同会拒绝覆盖。
+
+`scripts/release_assets.py` 将通用插件清单转换为 GitHub 安装入口，程序包内容和摘要保持不变；下载固定版本程序包，`pluginURL` 指向最新正式版清单。服务器与插件分别使用 `SHA256SUMS` 和 `PLUGIN-SHA256SUMS`，Release 说明分开列出两种安装方式。服务器提供的插件地址和签名更新频道保持独立。
+
+主分支验证通过后，工作流也会检查最新正式 Release 的独立插件附件。旧版缺失时，从该 Release 的 `bundle.json` 所确认的原始网关镜像提取插件并补齐；已有附件必须逐字一致，禁止覆盖。只更新安装说明，不改旧标签、镜像或原服务器包，也不据此升级线上服务。
 
 `scripts/package_release.py` 使用明确文件名单打包，不复制整个工作目录。第三方 acme.sh 固定摘要并保留完整源码和 GPL 许可证，位于网关镜像 `/opt/acme/`。发布后的固定版本文件不覆盖，修订使用新标签和新文件名。
 

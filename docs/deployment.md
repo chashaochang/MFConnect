@@ -152,7 +152,9 @@ chmod 600 .env
 | 容器正常但外网打不开 | 入口与通配解析、主机防火墙、云安全组及端口映射 |
 | Existing entry differs | 配置与已有数据不符；恢复原入口或执行明确迁移，不删除数据重新安装 |
 
-安装插件使用 `https://入口/downloads/mfconnect/mfconnect.plg`，设置位于 **Settings → MF Connect**。App 可请求一次性安装链接。开启 MF Connect 后，已声明 WebUI 且目标有效的 Docker 应用自动接入，每 30 秒重新扫描；新增或重建应用自动关联，无需逐个发布。关闭 MF Connect 后远程访问关闭。独立 IP 容器需允许 Unraid 主机访问。
+在 Unraid 的 **Plugins → Install Plugin** 粘贴 `https://github.com/chashaochang/MFConnect/releases/latest/download/mfconnect.plg`，即可安装项目最新正式版插件。指定版本可使用 `https://github.com/chashaochang/MFConnect/releases/download/v0.8.1/mfconnect.plg`。这两种清单都通过 Unraid 插件管理器检查后续正式版更新，程序包会自动下载，无需手动解压。
+
+原 `https://入口/downloads/mfconnect/mfconnect.plg` 继续有效，使用部署者随网关提供的插件版本；App 一次性安装链接和签名更新频道保持不变。设置位于 **Settings → MF Connect**。开启 MF Connect 后，已声明 WebUI 且目标有效的 Docker 应用自动接入，每 30 秒重新扫描；新增或重建应用自动关联，无需逐个发布。关闭 MF Connect 后远程访问关闭。独立 IP 容器需允许 Unraid 主机访问。
 
 ## 已有部署迁移
 

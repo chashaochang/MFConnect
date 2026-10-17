@@ -137,10 +137,30 @@ docker compose ps
 ## 安装 Unraid 插件
 
 1. 在 Unraid 7+ 打开 **Plugins → Install Plugin**。
-2. 输入 `https://你的入口/downloads/mfconnect/mfconnect.plg`，点击安装。
-3. 打开 **Settings → MF Connect**，或在支持本协议的 RaidMate 中配置同一个入口和连接 ID。
+2. 粘贴下面的 GitHub 官方安装地址，点击安装：
+
+   ```text
+   https://github.com/chashaochang/MFConnect/releases/latest/download/mfconnect.plg
+   ```
+
+3. 打开 **Settings → MF Connect**，填写自己的 HTTPS 中继入口和连接 ID；也可在支持本协议的 RaidMate 中配置。
+
+已部署中继也会提供 `https://你的入口/downloads/mfconnect/mfconnect.plg`，原安装方式继续可用。GitHub 安装地址跟随项目最新正式版；中继提供的地址跟随该部署的插件版本。插件安装后可在 Unraid 插件管理器中检查更新，安装来源不影响已有配置。
 
 支持自动安装的客户端也可取得一次性安装链接，无需邀请码或云账号。开启 MF Connect 后，所有已声明 WebUI 且目标有效的 Docker 应用会自动接入，新增或重建应用也会自动关联，无需逐个发布。关闭 MF Connect 后远程访问关闭；中继认证与应用本身的登录仍然有效。
+
+## Release 下载文件怎么选
+
+[GitHub Releases](https://github.com/chashaochang/MFConnect/releases/latest) 同时提供服务器部署文件和 Unraid 插件，版本号用 `<版本>` 表示：
+
+| 你要安装什么 | 使用哪个文件 |
+| --- | --- |
+| 云服务器，镜像在线拉取 | `mfconnect-<版本>-deploy.tar.gz`，支持 Docker / Compose |
+| 云服务器，需要离线镜像 | `mfconnect-<版本>-docker-amd64.tar.gz` |
+| Unraid 插件 | 在“安装插件”中粘贴上面的 `mfconnect.plg` 地址 |
+| 插件程序包 | `mfconnect-<版本>-linux-amd64.tar.gz`，由 `.plg` 自动下载，无需手动解压 |
+
+`SHA256SUMS` 校验服务器部署包，`PLUGIN-SHA256SUMS` 校验插件文件。`bundle.json` 和 `plugin-release.json` 分别记录服务器与插件的版本信息。GitHub 自动生成的 **Source code** 是源码，不是安装包；此仓库不发布 RaidMate 手机客户端。
 
 ## 地址与能力
 
