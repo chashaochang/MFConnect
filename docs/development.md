@@ -31,7 +31,7 @@ python3 scripts/test_unified_deployment.py --native
 
 ## 兼容部署与发行接入
 
-`deploy/compose/compose.yaml` 是面向新部署的完整容器模板，`deploy/docker/run.sh` 提供不依赖 Compose 的同等部署。源码根目录的 `compose.yaml` 保留宿主机 Nginx 部署的兼容构建与测试入口；公开部署包使用完整模板，不要求使用者运行兼容测试或自行编译。
+根目录 `compose.yaml` 是面向新部署的完整容器模板，`deploy/docker/run.sh` 提供不依赖 Compose 的同等部署。`deploy/legacy/` 仅供已有宿主机 Nginx 部署兼容构建与测试使用；兼容构建包会把该模板映射回包内根目录。新部署无需自行编译。
 
 通用 DNS/TLS 管理工具 `deploy/unified/manage.py` 继续供已有部署迁移使用。App 更新协议支持签名发行物和独立更新执行器；接入方配置签名公钥、发行目录和更新权限，实际签名私钥与部署命令留在自己的私有环境。普通安装步骤不包含这些发行操作。
 
@@ -45,7 +45,7 @@ make plugin RELEASE_BASE=https://downloads.example.com/mfconnect
 
 `plugin-local` 生成离线测试包；在线清单引用指定发布地址。`docker-bundle` 生成 Compose 构建目录包，不是可直接 `docker load` 的镜像归档。版本、载荷摘要和签名必须与实际程序一致。
 
-完整部署测试为 `sudo python3 scripts/test_compose_stack.py`，实际运行普通 Docker 和 Compose，使用独立项目、数据卷、测试 CA 和示例域名，覆盖无云凭据启动、证书轮换和配置保留。普通 Docker 还验证重复启动和重建容器保留身份。
+完整部署测试为 `sudo python3 scripts/test_compose_stack.py`，实际执行 README 的 Docker 命令、普通 Docker 管理脚本和 Compose，使用独立项目、数据卷、测试 CA 和示例域名，覆盖无云凭据启动、证书轮换和配置保留。普通 Docker 还验证重复启动和重建容器保留身份。
 
 GitHub Actions 验证后用工作流临时 Token 发布 GHCR 镜像，无需把维护者凭据写入源码。分支只发布带提交 SHA 的候选标签；`v*` 标签与程序版本一致时，发布固定版本镜像、轻量配置包、离线镜像包和 SHA-256 清单。镜像首次发布后，包所有者需将两个包设为公开；工作流在匿名拉取成功前不创建正式 Release。已有标签的镜像内容不同会拒绝覆盖。
 

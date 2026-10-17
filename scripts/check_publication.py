@@ -28,7 +28,7 @@ SECRETS = (
 
 
 def allowed_path(name):
-    if name in TOP_LEVEL or name in DOCUMENTS or name in ('plugin/rc.mfconnect', '.github/workflows/release.yml', 'deploy/compose/env.example', 'deploy/gateway/Dockerfile'):
+    if name in TOP_LEVEL or name in DOCUMENTS or name in ('plugin/rc.mfconnect', '.github/workflows/release.yml', 'deploy/legacy/env.example', 'deploy/compose/env.example', 'deploy/gateway/Dockerfile'):
         return True
     path = PurePosixPath(name)
     return (len(path.parts) > 1

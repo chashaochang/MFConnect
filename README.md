@@ -17,11 +17,92 @@
 - 放行 TCP **80、443、17000**。
 - 覆盖入口和 `*.入口` 的已有证书，或者域名 DNS 服务商的授权，用于自动申请证书。
 
-下面的命令在服务器的空目录执行。向导会询问入口、证书方式，然后拉取镜像并启动。选择已有证书时输入完整链和私钥的**绝对文件路径**；选择自动申请时输入 DNS 服务商及凭据。凭据仅保存在你自己的服务器上。
+先在服务器准备部署目录和配置，将下方入口改为自己的域名：
+
+```bash
+mkdir -p mfconnect/config
+cd mfconnect
+cat > .env <<'ENV'
+MF_ENTRY_ORIGIN=https://connect.example.com
+MF_TLS_MODE=provided
+ENV
+chmod 600 .env
+```
+
+将证书完整链放入 `config/fullchain.pem`，私钥放入 `config/privkey.pem`，执行 `chmod 600 config/privkey.pem`。没有已有证书时，可以先配置[自动申请证书](docs/deployment.md#自动申请和续期可选)。然后选择以下一种方式。
 
 ### 方式一：普通 Docker
 
-**不需要 Compose。** 复制整个代码块执行：
+直接使用 `docker run`，**不需要 Compose 或安装脚本**。两个容器分别负责 HTTPS 网关和中继服务，共享证书和插件下载目录。
+
+首次安装创建专用网络和数据卷：
+
+```bash
+docker network create --subnet 172.31.253.0/28 --label io.mfconnect.docker-project=mfconnect-docker mfconnect-docker-network
+docker volume create --label io.mfconnect.docker-project=mfconnect-docker mfconnect-docker-gateway
+docker volume create --label io.mfconnect.docker-project=mfconnect-docker mfconnect-docker-tls
+docker volume create --label io.mfconnect.docker-project=mfconnect-docker mfconnect-docker-updates
+docker volume create --label io.mfconnect.docker-project=mfconnect-docker mfconnect-docker-data
+```
+
+启动网关：
+
+```bash
+docker run -d --name mfconnect-docker-gateway \
+  --label io.mfconnect.docker-project=mfconnect-docker \
+  --platform linux/amd64 --init --restart unless-stopped --stop-timeout 120 \
+  --read-only --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+  --cap-add SETUID --cap-add SETGID --cap-add NET_BIND_SERVICE --security-opt no-new-privileges:true \
+  --tmpfs /tmp:rw,noexec,nosuid,size=64m,mode=1777 --tmpfs /run:rw,noexec,nosuid,size=8m,mode=0755 \
+  --network mfconnect-docker-network --ip 172.31.253.2 --network-alias gateway \
+  -p 80:80 -p 443:443 --env-file .env \
+  -v mfconnect-docker-gateway:/state -v mfconnect-docker-tls:/state/certs \
+  -v mfconnect-docker-updates:/updates -v "$PWD/config:/config:ro,z" \
+  --health-cmd 'python3 /opt/mfconnect/gateway.py health' \
+  --health-interval 10s --health-timeout 5s --health-retries 60 \
+  --log-driver json-file --log-opt max-size=10m --log-opt max-file=3 \
+  ghcr.io/chashaochang/mfconnect-gateway:0.7.2
+```
+
+执行 `docker ps`，等待网关显示 **healthy** 后启动中继服务。如果未就绪，用 `docker logs --tail=100 mfconnect-docker-gateway` 检查证书或 DNS 配置。
+
+```bash
+docker run -d --name mfconnect-docker-server \
+  --label io.mfconnect.docker-project=mfconnect-docker \
+  --platform linux/amd64 --init --restart unless-stopped --stop-timeout 60 \
+  --user 10001:10001 --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+  --tmpfs /tmp:rw,noexec,nosuid,size=16m,mode=1777 \
+  --network mfconnect-docker-network --network-alias mfconnect \
+  -p 17000:17000 --env-file .env \
+  -e 'MF_TRUSTED_PROXY_IPS=["172.31.253.2"]' -e MF_WATCH_TLS=1 \
+  -e MF_UPDATE_DIR=/var/lib/mfconnect-updates \
+  -e MF_PLUGIN_MANIFEST=/var/lib/mfconnect-updates/plugin-install.plg \
+  -e MF_INSTALL_MODE=self_service -e MF_INSTALL_DEVICE_LIMIT=10 \
+  -v mfconnect-docker-data:/var/lib/mfconnect -v mfconnect-docker-tls:/etc/mfconnect/tls:ro \
+  -v mfconnect-docker-updates:/var/lib/mfconnect-updates \
+  --log-driver json-file --log-opt max-size=10m --log-opt max-file=3 \
+  ghcr.io/chashaochang/mfconnect-server:0.7.2-docker.1 bootstrap
+
+docker ps
+```
+
+### 方式二：Docker Compose
+
+在准备好 `.env` 和 `config/` 的部署目录下载完整配置，然后启动：
+
+```bash
+curl -fL --proto '=https' --proto-redir '=https' --retry 3 \
+  https://raw.githubusercontent.com/chashaochang/MFConnect/v0.7.2/compose.yaml \
+  -o compose.yaml
+docker compose up -d --wait --wait-timeout 660
+docker compose ps
+```
+
+完整配置见 [compose.yaml](compose.yaml)，可直接查看或复制。首次启动自动拉取两个镜像，Compose 会等待网关就绪后启动服务端。查看日志使用 `docker compose logs --tail=100`。
+
+### 可选：交互配置向导
+
+如果希望自动填写配置、创建资源并启动容器，可在空目录运行下面的向导。它只调用 Docker，不安装宿主机服务：
 
 ```bash
 curl -fL --proto '=https' --proto-redir '=https' --retry 3 \
@@ -29,38 +110,9 @@ curl -fL --proto '=https' --proto-redir '=https' --retry 3 \
   -o mfconnect-install.sh && sh mfconnect-install.sh --docker
 ```
 
-之后在生成的 `mfconnect` 目录管理：
+选择 Compose 时，将最后的 `--docker` 改为 `--compose`。向导询问入口、已有证书的绝对路径或 DNS 授权；凭据只保存在自己的服务器上。自动签证支持 Cloudflare、阿里云 DNS 和腾讯云 DNSPod，按域名使用的 DNS 服务商选择，与服务器在哪里买无关。
 
-```bash
-cd mfconnect
-sh docker-run.sh status
-sh docker-run.sh logs
-```
-
-启动脚本实际使用 `docker run`，负责网络、数据卷、容器启动顺序和健康检查。停止服务用 `sh docker-run.sh down`，保留数据；重新启动用 `sh docker-run.sh up`。
-
-### 方式二：Docker Compose
-
-复制整个代码块执行：
-
-```bash
-curl -fL --proto '=https' --proto-redir '=https' --retry 3 \
-  https://raw.githubusercontent.com/chashaochang/MFConnect/v0.7.2/install.sh \
-  -o mfconnect-install.sh && sh mfconnect-install.sh --compose
-```
-
-之后使用标准 Compose 命令管理：
-
-```bash
-cd mfconnect
-docker compose ps
-docker compose logs --tail=100
-docker compose up -d
-```
-
-部署目录内有 `compose.yaml`、`.env` 和 `config/`。也可以[手动下载配置部署](docs/deployment.md#手动部署)，不使用向导。
-
-自动签证支持 Cloudflare、阿里云 DNS 和腾讯云 DNSPod，按**域名的 DNS 服务商**选择，与服务器在哪里买无关；其他服务商可使用已有证书。镜像仓库无法访问时可用[离线镜像包](docs/deployment.md#离线镜像包)。
+镜像仓库无法访问时可用[离线镜像包](docs/deployment.md#离线镜像包)。更新、备份及两种方式的管理命令见[部署与维护](docs/deployment.md)。
 
 ## 安装 Unraid 插件
 

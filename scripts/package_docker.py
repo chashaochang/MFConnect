@@ -21,11 +21,13 @@ def main():
     parser.add_argument('--output', type=Path, default=ROOT / 'dist/docker' / VERSION)
     args = parser.parse_args()
     files = {}
-    for name in ('Dockerfile', '.dockerignore', 'compose.yaml', '.env.example',
+    for name in ('Dockerfile', '.dockerignore',
                  'deploy/docker/entrypoint.sh', 'deploy/docker/healthcheck.sh',
                  'deploy/docker/watch-tls.sh',
                  'deploy/docker/install-updater.sh', 'deploy/docker/mfconnect-updater.service'):
         files[name] = ((ROOT / name).read_bytes(), 0o755 if name.endswith('.sh') else 0o644)
+    for source, target in (('deploy/legacy/compose.yaml', 'compose.yaml'), ('deploy/legacy/env.example', '.env.example')):
+        files[target] = ((ROOT / source).read_bytes(), 0o644)
     for name in ('deploy/unified/config.example.json', 'deploy/unified/manage.py',
                  'deploy/unified/tencent.py', 'deploy/unified/mfconnect-tls.service',
                  'deploy/unified/mfconnect-tls.timer'):

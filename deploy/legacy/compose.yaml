@@ -1,0 +1,62 @@
+name: mfconnect
+
+services:
+  mfconnect:
+    image: mfconnect-server:${MF_IMAGE_TAG:-0.7.2-docker.1}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 60s
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+    environment:
+      MF_ENTRY_ORIGIN: ${MF_ENTRY_ORIGIN:-}
+      MF_API_HOST: ${MF_API_HOST:-}
+      MF_BASE_DOMAIN: ${MF_BASE_DOMAIN:-}
+      MF_TUNNEL_HOST: ${MF_TUNNEL_HOST:-}
+      MF_TUNNEL_PORT: ${MF_TUNNEL_PORT:-17000}
+      MF_PROXY_PORT_START: ${MF_PROXY_PORT_START:-20000}
+      MF_PROXY_PORT_END: ${MF_PROXY_PORT_END:-20999}
+      MF_TRUSTED_PROXY_IPS: ${MF_TRUSTED_PROXY_IPS:-[]}
+      MF_UPDATE_DIR: /var/lib/mfconnect-updates
+      MF_UPDATE_OWNER: ${MF_UPDATE_OWNER:-}
+      MF_UPDATE_DEVICE: ${MF_UPDATE_DEVICE:-}
+      MF_CONNECT_HOST: ${MF_CONNECT_HOST:-}
+      MF_PLUGIN_MANIFEST: /var/lib/mfconnect-updates/plugin-install.plg
+      MF_INSTALL_MODE: ${MF_INSTALL_MODE:-self_service}
+      MF_INSTALL_DEVICE_LIMIT: ${MF_INSTALL_DEVICE_LIMIT:-10}
+    ports:
+      - "${MF_HTTPS_BIND:-127.0.0.1:18443}:8443/tcp"
+      - "${MF_TUNNEL_PORT:-17000}:${MF_TUNNEL_PORT:-17000}/tcp"
+    volumes:
+      - data:/var/lib/mfconnect
+      - type: bind
+        source: ${MF_UPDATE_DIRECTORY:-./updates}
+        target: /var/lib/mfconnect-updates
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./certs
+        target: /etc/mfconnect/tls
+        read_only: true
+        bind:
+          create_host_path: false
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  data:
+    name: mfconnect_data

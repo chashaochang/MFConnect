@@ -1,62 +1,90 @@
 name: mfconnect
 
 services:
+  gateway:
+    image: ${MF_GATEWAY_IMAGE:-ghcr.io/chashaochang/mfconnect-gateway:0.7.2}
+    pull_policy: missing
+    platform: linux/amd64
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 120s
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID, NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+      - /run:rw,noexec,nosuid,size=8m,mode=0755
+    environment:
+      MF_ENTRY_ORIGIN: ${MF_ENTRY_ORIGIN:?Set MF_ENTRY_ORIGIN in .env}
+      MF_TLS_MODE: ${MF_TLS_MODE:-provided}
+      MF_DNS_PROVIDER: ${MF_DNS_PROVIDER:-}
+    ports:
+      - "${MF_HTTP_BIND:-0.0.0.0:80}:80/tcp"
+      - "${MF_HTTPS_BIND:-0.0.0.0:443}:443/tcp"
+    volumes:
+      - gateway:/state
+      - tls:/state/certs
+      - updates:/updates
+      - ./config:/config:ro,z
+    networks:
+      default:
+        ipv4_address: ${MF_GATEWAY_IP:-172.31.253.2}
+    healthcheck:
+      test: [CMD, python3, /opt/mfconnect/gateway.py, health]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
   mfconnect:
-    image: mfconnect-server:${MF_IMAGE_TAG:-0.7.2-docker.1}
-    pull_policy: never
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${MF_SERVER_IMAGE:-ghcr.io/chashaochang/mfconnect-server:0.7.2-docker.1}
+    pull_policy: missing
     platform: linux/amd64
     init: true
     restart: unless-stopped
     stop_grace_period: 60s
     user: "10001:10001"
     read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+    command: [bootstrap]
+    depends_on:
+      gateway:
+        condition: service_healthy
     environment:
-      MF_ENTRY_ORIGIN: ${MF_ENTRY_ORIGIN:-}
-      MF_API_HOST: ${MF_API_HOST:-}
-      MF_BASE_DOMAIN: ${MF_BASE_DOMAIN:-}
-      MF_TUNNEL_HOST: ${MF_TUNNEL_HOST:-}
+      MF_ENTRY_ORIGIN: ${MF_ENTRY_ORIGIN:?Set MF_ENTRY_ORIGIN in .env}
       MF_TUNNEL_PORT: ${MF_TUNNEL_PORT:-17000}
-      MF_PROXY_PORT_START: ${MF_PROXY_PORT_START:-20000}
-      MF_PROXY_PORT_END: ${MF_PROXY_PORT_END:-20999}
-      MF_TRUSTED_PROXY_IPS: ${MF_TRUSTED_PROXY_IPS:-[]}
+      MF_TRUSTED_PROXY_IPS: '["${MF_GATEWAY_IP:-172.31.253.2}"]'
+      MF_WATCH_TLS: "1"
       MF_UPDATE_DIR: /var/lib/mfconnect-updates
+      MF_PLUGIN_MANIFEST: /var/lib/mfconnect-updates/plugin-install.plg
+      MF_INSTALL_MODE: self_service
+      MF_INSTALL_DEVICE_LIMIT: ${MF_INSTALL_DEVICE_LIMIT:-10}
       MF_UPDATE_OWNER: ${MF_UPDATE_OWNER:-}
       MF_UPDATE_DEVICE: ${MF_UPDATE_DEVICE:-}
-      MF_CONNECT_HOST: ${MF_CONNECT_HOST:-}
-      MF_PLUGIN_MANIFEST: /var/lib/mfconnect-updates/plugin-install.plg
-      MF_INSTALL_MODE: ${MF_INSTALL_MODE:-self_service}
-      MF_INSTALL_DEVICE_LIMIT: ${MF_INSTALL_DEVICE_LIMIT:-10}
     ports:
-      - "${MF_HTTPS_BIND:-127.0.0.1:18443}:8443/tcp"
       - "${MF_TUNNEL_PORT:-17000}:${MF_TUNNEL_PORT:-17000}/tcp"
     volumes:
       - data:/var/lib/mfconnect
-      - type: bind
-        source: ${MF_UPDATE_DIRECTORY:-./updates}
-        target: /var/lib/mfconnect-updates
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ./certs
-        target: /etc/mfconnect/tls
-        read_only: true
-        bind:
-          create_host_path: false
+      - tls:/etc/mfconnect/tls:ro
+      - updates:/var/lib/mfconnect-updates
     logging:
       driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      options: {max-size: 10m, max-file: "3"}
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${MF_NETWORK_SUBNET:-172.31.253.0/28}
 
 volumes:
+  gateway:
+  tls:
+  updates:
   data:
-    name: mfconnect_data

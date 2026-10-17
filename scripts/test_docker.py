@@ -32,7 +32,7 @@ def run(args, env=None, success=True):
 
 
 def main():
-    compose = yaml.safe_load((ROOT / 'compose.yaml').read_text())
+    compose = yaml.safe_load((ROOT / 'deploy/legacy/compose.yaml').read_text())
     service = compose['services']['mfconnect']
     assert list(compose['services']) == ['mfconnect']
     assert service['init'] and service['read_only']

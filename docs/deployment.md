@@ -4,7 +4,7 @@
 
 ## 安装方式
 
-首次安装推荐使用 [README 的配置向导](../README.md#自己部署中继)，普通 Docker 和 Docker Compose 都支持。向导只下载配置和镜像，不安装宿主机服务；已存在 `mfconnect` 目录时拒绝覆盖。
+首次安装按 [README 的标准 Docker 或 Compose 命令](../README.md#自己部署中继) 操作即可。仓库根目录的 `compose.yaml` 是完整新部署模板。交互向导作为可选方式，只下载配置和镜像，不安装宿主机服务；已存在 `mfconnect` 目录时拒绝覆盖。
 
 两种方式运行相同的服务：`mfconnect-server` 提供 API 和 FRP，`mfconnect-gateway` 提供 HTTPS 网关、证书管理和插件下载。0.7.2 包含服务端及插件 0.7.2、FRP 0.71.1，仅支持 Linux amd64。宿主机不挂载 Docker socket，不运行证书续期任务。
 
@@ -21,9 +21,9 @@
 
 服务器防火墙和云安全组放行 TCP 80、443、17000；向导不会修改它们。自动签证还需要能访问证书机构和所选 DNS API。
 
-## 手动部署
+## 下载完整配置包
 
-不使用向导时，在空目录复制执行以下命令下载配置：
+除 README 的直接命令外，也可一次下载 Compose、可选管理脚本和说明。在空目录执行：
 
 ```bash
 curl -fLO --proto '=https' --proto-redir '=https' --retry 3 \
@@ -41,7 +41,7 @@ chmod 600 .env
 
 | 运行方式 | 启动命令 | 查看状态 |
 | --- | --- | --- |
-| 普通 Docker | `sh docker-run.sh up` | `sh docker-run.sh status` |
+| 普通 Docker | README 中的 `docker run`，或可选的 `sh docker-run.sh up` | `docker ps` |
 | Compose | `docker compose up -d --wait --wait-timeout 660` | `docker compose ps` |
 
 首次启动自动拉取镜像。**同一个实例只选一种运行方式**；两者的数据卷命名不同，不能直接交替运行来迁移数据。
@@ -61,7 +61,7 @@ MF_TLS_MODE=provided
 chmod 600 config/privkey.pem
 ```
 
-此模式不读取任何云服务商凭据。证书的申请和续期可由已有的证书工具完成；替换这两个文件后，网关会校验并自动加载。更换文件内容即可，不要单独替换整个 `config` 挂载目录。
+默认配置中的 DNS 凭据只放在 `config/dns.env`，不要写入通用 `.env`。已有证书模式不读取云服务商凭据。证书的申请和续期可由已有的证书工具完成；替换这两个文件后，网关会校验并自动加载。更换文件内容即可，不要单独替换整个 `config` 挂载目录。
 
 ### 自动申请和续期（可选）
 
@@ -96,13 +96,24 @@ chmod 600 config/dns.env
 
 | 操作 | 普通 Docker | Docker Compose |
 | --- | --- | --- |
-| 状态 | `sh docker-run.sh status` | `docker compose ps` |
-| 日志 | `sh docker-run.sh logs` | `docker compose logs --tail=100` |
-| 停止并保留数据 | `sh docker-run.sh down` | `docker compose down` |
-| 重新启动 | `sh docker-run.sh up` | `docker compose up -d` |
-| 拉取并应用更新 | `sh docker-run.sh update` | `docker compose pull && docker compose up -d --wait --wait-timeout 660` |
+| 状态 | `docker ps -a --filter name=mfconnect-docker` | `docker compose ps` |
+| 网关日志 | `docker logs --tail=100 mfconnect-docker-gateway` | `docker compose logs --tail=100 gateway` |
+| 服务端日志 | `docker logs --tail=100 mfconnect-docker-server` | `docker compose logs --tail=100 mfconnect` |
+| 停止并保留数据 | `docker stop mfconnect-docker-server mfconnect-docker-gateway` | `docker compose down` |
+| 重新启动 | `docker start mfconnect-docker-gateway mfconnect-docker-server` | `docker compose up -d` |
 
-升级前备份；查看新版说明，将 `.env` 的 `MF_SERVER_IMAGE`、`MF_GATEWAY_IMAGE` 改为对应的新版本，再执行更新。使用固定版本标签，不依赖 `latest`；只运行更新命令不会自动跳到其他版本。若新版修改了配置模板或启动脚本，按该版迁移说明一并更新，保留 `.env`、`config/` 和数据卷。
+升级前备份，查看新版说明。普通 Docker 先 `docker pull` 两个新版镜像，再停止并删除**两个容器**，用新版镜像标签重新执行 README 的两个 `docker run` 命令；不要删除或重建数据卷。首次创建网络和卷的命令无需重复执行。
+
+Compose 在 `.env` 中新增或修改 `MF_SERVER_IMAGE`、`MF_GATEWAY_IMAGE` 为对应新版镜像，然后执行：
+
+```bash
+docker compose pull
+docker compose up -d --wait --wait-timeout 660
+```
+
+使用固定版本标签，不依赖 `latest`。如果使用向导或完整配置包，普通 Docker 还可以运行 `sh docker-run.sh update`：先在 `.env` 中设置两个新镜像地址，它会拉取并重建容器、保留数据。已有镜像的离线重建使用 `sh docker-run.sh recreate`。这些脚本只是标准 Docker 命令的可选封装。
+
+若新版修改了配置模板，按该版迁移说明更新，保留 `.env`、`config/` 和数据卷。普通 Docker 的端口、网络由 `docker run` 参数指定；调整网关 IP 时，还需同步修改服务端的 `MF_TRUSTED_PROXY_IPS`。Compose 和管理脚本可通过 `.env` 的端口、网段字段配置。
 
 普通 Docker 使用 `mfconnect-docker-*` 容器、网络和数据卷，Compose 默认项目名为 `mfconnect`。两者各有业务数据、网关状态、证书和更新目录四个数据卷。**不要删除数据卷或执行 `docker compose down -v`**。备份配置、密钥和一致性的业务数据库，备份不放入公开下载目录。
 
@@ -123,7 +134,7 @@ cp .env.example .env
 chmod 600 .env
 ```
 
-按手动部署步骤填写入口和放入证书，启动即可使用已导入的镜像。离线更新导入新版镜像后，普通 Docker 使用 `sh docker-run.sh recreate`，Compose 使用 `docker compose up -d --pull never`，避免尝试联网拉取。
+填写入口并放入证书，按 README 的 Docker 或 Compose 命令启动，即可使用已导入的镜像。离线更新导入新版镜像后，普通 Docker 使用 `sh docker-run.sh recreate`，Compose 使用 `docker compose up -d --pull never`，避免尝试联网拉取。
 
 ## 常见问题
 

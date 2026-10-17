@@ -10,6 +10,7 @@ import http.client
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import socket
 import ssl
@@ -50,7 +51,7 @@ def test(host, version, mode):
             for source, target in [('server.crt','fullchain.pem'),('server.key','privkey.pem')]:
                 temp = config / (target + '.next'); temp.write_bytes((fixture / source).read_bytes()); temp.replace(config / target)
         provide(fixtures[0])
-        (work / 'compose.yaml').write_bytes((ROOT / 'deploy/compose/compose.yaml').read_bytes())
+        (work / 'compose.yaml').write_bytes((ROOT / 'compose.yaml').read_bytes())
         (work / '.env').write_text('MF_ENTRY_ORIGIN=https://' + host + '\nMF_HTTP_BIND=127.0.0.1:19080\nMF_HTTPS_BIND=127.0.0.1:19443\nMF_TUNNEL_PORT=17001\nMF_NETWORK_SUBNET=172.31.251.0/28\nMF_GATEWAY_IP=172.31.251.2\nMF_SERVER_IMAGE=mfconnect-server:' + version + '-docker.1\nMF_GATEWAY_IMAGE=mfconnect-gateway:' + version + '\nMF_DOCKER_PROJECT=' + project + '\n')
         (work / '.env').chmod(0o600)
         # No provider or provider credentials. Explicit test-only CA is mounted
@@ -62,12 +63,31 @@ def test(host, version, mode):
                           'ports':[{'target':8443,'published':'19444','host_ip':'127.0.0.1','protocol':'tcp'}]}}}
         (work / 'test.json').write_text(json.dumps(override))
         compose = ['docker','compose','--project-name',project,'-f',str(work / 'compose.yaml'),'-f',str(work / 'test.json')]
+        readme_started = False
         def command(arguments):
+            nonlocal readme_started
             if mode == 'compose': return run(compose + arguments, cwd=work)
             names = {'gateway':project + '-gateway', 'mfconnect':project + '-server'}
             action = arguments[0]
             if action == 'config': return run(['sh','-n',work / 'docker-run.sh'])
-            if action == 'up': return run(['sh',work / 'docker-run.sh','up'],cwd=work,env=docker_env)
+            if action == 'up':
+                if mode == 'readme' and not readme_started:
+                    blocks = [block for block in re.findall(r'```bash\n(.*?)\n```',(ROOT / 'README.md').read_text(),re.S)
+                              if block.startswith(('docker network create','docker run -d --name mfconnect-docker-'))]
+                    assert len(blocks) == 3, 'README must contain network/volumes, gateway and server commands'
+                    for block in blocks:
+                        for source, target in [('mfconnect-docker',project),('172.31.253.0/28','172.31.251.0/28'),
+                            ('172.31.253.2','172.31.251.2'),('-p 80:80','-p 127.0.0.1:19080:80'),
+                            ('-p 443:443','-p 127.0.0.1:19443:443'),('-p 17000:17000','-p 17001:17001'),
+                            ('ghcr.io/chashaochang/mfconnect-gateway:' + version,'mfconnect-gateway:' + version),
+                            ('ghcr.io/chashaochang/mfconnect-server:' + version,'mfconnect-server:' + version)]:
+                            block = block.replace(source,target)
+                        run(['sh','-eu'],input=block,cwd=work,env=docker_env)
+                        if block.startswith('docker run -d --name ' + names['gateway']):
+                            wait(lambda: run(['docker','inspect','--format','{{.State.Health.Status}}',names['gateway']]).strip() == 'healthy')
+                    readme_started = True
+                    return ''
+                return run(['sh',work / 'docker-run.sh','up'],cwd=work,env=docker_env)
             if action == 'ps': return run(['docker','inspect','--format','{{.Id}}',names[arguments[-1]]])
             if action == 'exec': return run(['docker','exec',names[arguments[2]],*arguments[3:]])
             if action == 'restart': return run(['docker','restart',*names.values()])
@@ -85,7 +105,7 @@ def test(host, version, mode):
                 run(['docker','volume','rm',*[project + '-' + item for item in ('gateway','tls','updates','data')]])
                 return ''
             raise ValueError(action)
-        if mode == 'docker':
+        if mode in ('docker','readme'):
             (work / 'docker-run.sh').write_bytes((ROOT / 'deploy/docker/run.sh').read_bytes())
             shim = work / 'bin'; shim.mkdir()
             # Test-only injection of the private CA, just like the Compose
@@ -179,9 +199,9 @@ def test(host, version, mode):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--version',default='0.7.2')
-    parser.add_argument('--runtime',choices=('all','docker','compose'),default='all')
+    parser.add_argument('--runtime',choices=('all','docker','compose','readme'),default='all')
     args = parser.parse_args()
-    for mode in (('docker','compose') if args.runtime == 'all' else (args.runtime,)):
+    for mode in (('docker','compose','readme') if args.runtime == 'all' else (args.runtime,)):
         for host in ('example.test','connect.example.test'): test(host,args.version,mode)
     print('LIMIT: controlled test CA and fixture DNS names; no public ACME issuance or real NAS/client login.')
 

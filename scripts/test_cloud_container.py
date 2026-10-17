@@ -56,7 +56,9 @@ def main():
         path.chmod(0o600)
         os.chown(path, 10001, 10001)
     os.chown(certs, 10001, 10001)
-    config = json.loads(command(['docker', 'compose', 'config', '--format', 'json'], cwd=release, env=env))
+    legacy = release / 'deploy/legacy/compose.yaml'
+    if not legacy.is_file(): legacy = release / 'compose.yaml'
+    config = json.loads(command(['docker', 'compose', '--project-directory', str(release), '-f', str(legacy), 'config', '--format', 'json'], cwd=release, env=env))
     config['name'] = project
     config['networks']['default']['name'] = project
     config['volumes']['data']['name'] = project
