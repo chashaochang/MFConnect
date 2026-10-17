@@ -6,7 +6,7 @@
 
 首次安装按 [README 的标准 Docker 或 Compose 命令](../README.md#自己部署中继) 操作即可。仓库根目录的 `compose.yaml` 是完整新部署模板。交互向导作为可选方式，只下载配置和镜像，不安装宿主机服务；已存在 `mfconnect` 目录时拒绝覆盖。
 
-两种方式运行相同的服务：`mfconnect-server` 提供 API 和 FRP，`mfconnect-gateway` 提供 HTTPS 网关、证书管理和插件下载。0.7.2 包含服务端及插件 0.7.2、FRP 0.71.1，仅支持 Linux amd64。宿主机不挂载 Docker socket，不运行证书续期任务。
+两种方式运行相同的服务：`mfconnect-server` 提供 API 和 FRP，`mfconnect-gateway` 提供 HTTPS 网关、证书管理和插件下载。0.8.0 包含服务端及插件 0.8.0、FRP 0.71.1，仅支持 Linux amd64。宿主机不挂载 Docker socket，不运行证书续期任务。
 
 ### 配置域名
 
@@ -27,11 +27,11 @@
 
 ```bash
 curl -fLO --proto '=https' --proto-redir '=https' --retry 3 \
-  https://github.com/chashaochang/MFConnect/releases/download/v0.7.2/mfconnect-0.7.2-deploy.tar.gz
+  https://github.com/chashaochang/MFConnect/releases/download/v0.8.0/mfconnect-0.8.0-deploy.tar.gz
 curl -fLO --proto '=https' --proto-redir '=https' --retry 3 \
-  https://github.com/chashaochang/MFConnect/releases/download/v0.7.2/SHA256SUMS
-awk '$2 == "mfconnect-0.7.2-deploy.tar.gz" {print; n++} END {if (n != 1) exit 1}' SHA256SUMS > selected.sha256
-sha256sum -c selected.sha256 && tar -xzf mfconnect-0.7.2-deploy.tar.gz
+  https://github.com/chashaochang/MFConnect/releases/download/v0.8.0/SHA256SUMS
+awk '$2 == "mfconnect-0.8.0-deploy.tar.gz" {print; n++} END {if (n != 1) exit 1}' SHA256SUMS > selected.sha256
+sha256sum -c selected.sha256 && tar -xzf mfconnect-0.8.0-deploy.tar.gz
 cd mfconnect
 cp .env.example .env
 chmod 600 .env
@@ -123,11 +123,11 @@ App 内自动更新需要部署者预先配置更新频道；普通使用者不�
 
 无法访问 GHCR 时，可从 GitHub Release 下载含镜像的包。向导也支持离线镜像模式，将安装命令改成 `sh mfconnect-install.sh --docker --offline` 或 `sh mfconnect-install.sh --compose --offline`；仍需能访问 GitHub 下载文件。
 
-完全离线的服务器可在其他设备上下载 `mfconnect-0.7.2-docker-amd64.tar.gz` 和 `SHA256SUMS`，传入服务器后执行：
+完全离线的服务器可在其他设备上下载 `mfconnect-0.8.0-docker-amd64.tar.gz` 和 `SHA256SUMS`，传入服务器后执行：
 
 ```bash
-awk '$2 == "mfconnect-0.7.2-docker-amd64.tar.gz" {print; n++} END {if (n != 1) exit 1}' SHA256SUMS > selected.sha256
-sha256sum -c selected.sha256 && tar -xzf mfconnect-0.7.2-docker-amd64.tar.gz
+awk '$2 == "mfconnect-0.8.0-docker-amd64.tar.gz" {print; n++} END {if (n != 1) exit 1}' SHA256SUMS > selected.sha256
+sha256sum -c selected.sha256 && tar -xzf mfconnect-0.8.0-docker-amd64.tar.gz
 cd mfconnect
 docker load --input images.tar.gz
 cp .env.example .env
@@ -155,3 +155,26 @@ chmod 600 .env
 已有实例先备份，不要把新安装流程直接套在原数据上。保留连接 ID、设备身份及旧入口，在新入口和证书验证通过、客户端迁移完成前继续提供旧 API。
 
 从宿主机 Nginx 迁到网关容器时，需要安排 80/443 端口交接，并明确导入原业务数据和证书。通用向导不会改动现有站点，也不会自动搬迁 Docker 与 Compose 的数据。接口兼容和客户端迁移字段见 [API 文档](api.md)。
+
+## 可选：NAS 公网网页网关
+
+默认不需要公网直连配置，浏览器和应用使用中继。只有 NAS 确实具有公网可达 HTTPS 入口时，才配置本节；此设置不会为普通 LAN/DDNS 原生登录增加依赖。
+
+NAS 管理员在插件私有 `/boot/config/plugins/mfconnect/config.json` 中加入以下字段，保留原设备身份和其他配置：
+
+```json
+{
+  "public_gateway": {
+    "origin":"https://direct.example.net",
+    "listen":"0.0.0.0:18744",
+    "certificate":"/boot/config/plugins/mfconnect/public/fullchain.pem",
+    "private_key":"/boot/config/plugins/mfconnect/public/privkey.pem"
+  }
+}
+```
+
+这是一份字段片段，不能覆盖整个配置文件。`origin` 必须是完整 HTTPS DNS origin，当前公网端口固定 443，不接受路径或 IP。该域及子域不能与云端 API／应用／NAS 网页域名空间重叠，例如云端为 `connect.example.com`，可用独立的 `direct.example.net` 或 `direct.example.com`。DNS `*.direct.example.net` 指向 NAS 的真实公网地址，路由器将公网 TCP 443 转到 NAS 的 18744；只开放此认证网关，不开放 Docker 内部端口。
+
+网关使用 `*.direct.example.net` 证书：应用使用 `<既有HostKey>.direct.example.net`，NAS 使用 `nas-<设备摘要>.direct.example.net`；均为单层子域，不需要嵌套通配符。`origin` 是域名空间配置，本版本不提供该根域的网页入口。证书及私钥只保存在 NAS，必须由管理员已有的证书管理器签发／续期，本轮不自动操作用户路由器或 DNS。更换证书文件后下次 TLS 握手自动读取；无有效证书或监听失败时云端验证失败并保留中继。
+
+运行插件连接程序的 `check` 校验配置，再重新连接插件。在 RaidMate 或插件设置页开启“浏览器访问使用公网直连”。开关默认关闭，公网入口未经 HTTPS 和 NAS 身份验证时不会启用直连。此开关与 MF Connect 总开关都保存在服务端，并由插件签名接口回读；公网监听本身不授予任何应用访问权限。

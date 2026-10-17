@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
+	"mfconnect/internal/webproxy"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"mfconnect/internal/core"
@@ -112,6 +114,9 @@ func refreshDocker(ctx context.Context, path string) error {
 		templates, e2 := readTemplates("/boot/config/plugins/dockerMan/templates-user")
 		if e2 == nil {
 			cache, e = discoverDocker(containers, templates, c.Targets, cache)
+			if e == nil {
+				probeDockerTargets(ctx, &cache)
+			}
 		} else {
 			e = e2
 		}
@@ -505,4 +510,61 @@ func resolveDockerWebUI(c dockerContainer, all []dockerContainer, raw string) (s
 		return "", "/", "invalid_webui"
 	}
 	return origin, path, "ready"
+}
+
+// A declaration alone is insufficient for automatic remote access. Probe the
+// resolved HTTP(S) origin from this NAS; redirects are not followed and a 401,
+// 403 or 405 still proves an HTTP service exists. TLS uses normal verification
+// or an explicitly configured certificate pin.
+func probeDockerTargets(ctx context.Context, cache *dockerCache) {
+	targets := map[string]core.Target{}
+	for _, t := range cache.Targets {
+		targets[t.Key] = t
+	}
+	var wg sync.WaitGroup
+	limit := make(chan struct{}, 8)
+	for i := range cache.Report.Applications {
+		a := &cache.Report.Applications[i]
+		if a.State != "ready" {
+			continue
+		}
+		wg.Add(1)
+		go func(a *core.DockerApplication) {
+			defer wg.Done()
+			select {
+			case limit <- struct{}{}:
+				defer func() { <-limit }()
+			case <-ctx.Done():
+				a.State = "unreachable"
+				return
+			}
+			target := targets[a.TargetKey]
+			u, e := url.Parse(target.URL)
+			if e != nil {
+				a.State = "unreachable"
+				return
+			}
+			transport := webproxy.Transport()
+			defer transport.CloseIdleConnections()
+			transport.TLSClientConfig = webproxy.TLS(u.Hostname(), target.CertificateSHA256)
+			probe, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			request, e := http.NewRequestWithContext(probe, "HEAD", target.URL+a.EntryPath, nil)
+			if e != nil {
+				a.State = "unreachable"
+				return
+			}
+			client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+			response, e := client.Do(request)
+			if e != nil {
+				a.State = "unreachable"
+				return
+			}
+			response.Body.Close()
+			if response.StatusCode >= 500 {
+				a.State = "unreachable"
+			}
+		}(a)
+	}
+	wg.Wait()
 }

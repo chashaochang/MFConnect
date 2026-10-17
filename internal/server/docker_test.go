@@ -12,6 +12,12 @@ import (
 
 func TestDockerSyncStableServiceAndAccessLifecycle(t *testing.T) {
 	f := setup(t, "")
+	f.st.Update(func(st *store.State) error {
+		d := st.Devices["dev_one"]
+		d.ConnectEnabled = true
+		st.Devices[d.ID] = d
+		return nil
+	})
 	target := f.st.View().Services["svc_one"].Target
 	report := &core.DockerReport{Schema: 1, State: "ready", ScannedAt: time.Now().Unix(), Applications: []core.DockerApplication{{ID: "app_one", ContainerID: strings.Repeat("a", 64), Name: "Web", IdentityKind: "unraid_template", State: "ready", Running: true, TargetKey: target.Key, TargetURL: target.URL, EntryPath: "/web/?a=1"}}}
 	sync := func(targets []core.Target) {
@@ -140,5 +146,63 @@ func TestDockerInventoryScopeFilteringAndNewDefaults(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &out)
 	if out.Fresh || out.Apps[0].Available {
 		t.Fatal("offline inventory fresh")
+	}
+}
+
+func TestDockerAutomaticallyPublishesAndFollowsDeviceSwitch(t *testing.T) {
+	f := connectFixture(t)
+	report := &core.DockerReport{Schema: 1, State: "ready", ScannedAt: time.Now().Unix(), Applications: []core.DockerApplication{{ID: "app_new", ContainerID: strings.Repeat("f", 64), Name: "New", IdentityKind: "compose", State: "ready", Running: true, TargetKey: "docker_new", TargetURL: "http://127.0.0.1:8000", EntryPath: "/"}}}
+	input := core.SyncRequest{Docker: report, Targets: []core.Target{{Key: "docker_new", URL: report.Applications[0].TargetURL}}}
+	sync := func() {
+		t.Helper()
+		w := signedCall(f, "dev_one", "/v1/device/sync", input)
+		if w.Code != 200 {
+			t.Fatal(w.Body.String())
+		}
+		f.st.Update(func(st *store.State) error {
+			d := st.Devices["dev_one"]
+			d.PortalSupported = true
+			st.Devices[d.ID] = d
+			return nil
+		})
+	}
+	sync()
+	var id, host string
+	for _, svc := range f.st.View().Services {
+		if svc.Target.Key == "docker_new" {
+			id, host = svc.ID, svc.HostKey
+			if svc.Published {
+				t.Fatal("enabled before device switch")
+			}
+		}
+	}
+	if _, code := f.app.setConnect("dev_one", "home", true); code != "" {
+		t.Fatal(code)
+	}
+	if !f.st.View().Services[id].Published {
+		t.Fatal("enable requires manual publishing")
+	}
+	sync()
+	if !f.st.View().Services[id].Published {
+		t.Fatal("sync lost automatic state")
+	}
+	if w := invoke(f.app, "PATCH", "api.example.test", "/v1/services/"+id, "alice-token", map[string]bool{"published": false}); w.Code != 409 {
+		t.Fatal("obsolete publish accepted", w.Code)
+	}
+	report.Applications[0].ContainerID = strings.Repeat("e", 64)
+	sync()
+	if svc := f.st.View().Services[id]; svc.HostKey != host || !svc.Published {
+		t.Fatal("rebuild changed identity")
+	}
+	f.app.setConnect("dev_one", "home", false)
+	if f.st.View().Services[id].Published {
+		t.Fatal("off retained access")
+	}
+	f.app.setConnect("dev_one", "home", true)
+	report.Applications = nil
+	input.Targets = nil
+	sync()
+	if svc := f.st.View().Services[id]; svc.HostKey != host || svc.DockerAvailable {
+		t.Fatal("deletion lost identity or left access")
 	}
 }

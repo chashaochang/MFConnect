@@ -15,8 +15,8 @@ from urllib.parse import urlparse
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--version', default='0.7.2', help='Unraid plugin package version')
-parser.add_argument('--connector-version', default='0.7.2', help='Bundled connector binary version')
+parser.add_argument('--version', default='0.8.0', help='Unraid plugin package version')
+parser.add_argument('--connector-version', default='0.8.0', help='Bundled connector binary version')
 parser.add_argument('--updater', type=Path, default=root / 'dist/mfconnect-updater')
 parser.add_argument('--frp-version', default='0.71.1')
 parser.add_argument('--binary', type=Path, required=True)
@@ -107,7 +107,7 @@ update_attribute = '' if args.local else f' pluginURL="{html.escape(base + "/mfc
 manifest = f'''<?xml version="1.0" standalone="yes"?>
 <PLUGIN name="mfconnect" author="MF Connect" version="{html.escape(args.version, quote=True)}" launch="Settings/MFConnect" icon="exchange"{update_attribute} min="7.0.0">
 <!-- mfconnect-endpoint-contract:2 -->
-<CHANGES>{html.escape(args.version)}: Docker Compose deployment with container-managed ingress and certificates. Unified HTTPS entry, endpoint contract 2, Docker WebUI discovery and signed updates are preserved. Connector {html.escape(args.connector_version)}; FRP {html.escape(args.frp_version)}.</CHANGES>
+<CHANGES>{html.escape(args.version)}: Automatic Docker WebUI access follows the device switch. Verified public HTTPS gateway preference with relay fallback; unified entry and signed updates remain compatible. Connector {html.escape(args.connector_version)}; FRP {html.escape(args.frp_version)}.</CHANGES>
 <FILE Run="/bin/bash"><INLINE><![CDATA[{install}]]></INLINE></FILE>
 <FILE Run="/bin/bash" Method="remove"><INLINE><![CDATA[{remove}]]></INLINE></FILE>
 </PLUGIN>

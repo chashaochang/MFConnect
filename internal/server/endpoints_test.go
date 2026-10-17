@@ -476,7 +476,7 @@ func TestUnifiedDockerMappingAcrossNASAndRebuild(t *testing.T) {
 				t.Fatal(w.Code, w.Body.String())
 			}
 			a := out.Apps[0]
-			if a.ID != "app_local_identity" || !strings.HasPrefix(a.Origin, "https://app-") || !strings.HasSuffix(a.Origin, ".example.test") || a.Published {
+			if a.ID != "app_local_identity" || !strings.HasPrefix(a.Origin, "https://app-") || !strings.HasSuffix(a.Origin, ".example.test") || a.Published != f.st.View().Devices[device].ConnectEnabled {
 				t.Fatal(a)
 			}
 			if phase == 0 {

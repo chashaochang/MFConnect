@@ -2,7 +2,7 @@ name: mfconnect
 
 services:
   gateway:
-    image: ${MF_GATEWAY_IMAGE:-ghcr.io/chashaochang/mfconnect-gateway:0.7.2}
+    image: ${MF_GATEWAY_IMAGE:-ghcr.io/chashaochang/mfconnect-gateway:0.8.0}
     pull_policy: missing
     platform: linux/amd64
     init: true
@@ -40,7 +40,7 @@ services:
       options: {max-size: 10m, max-file: "3"}
 
   mfconnect:
-    image: ${MF_SERVER_IMAGE:-ghcr.io/chashaochang/mfconnect-server:0.7.2-docker.1}
+    image: ${MF_SERVER_IMAGE:-ghcr.io/chashaochang/mfconnect-server:0.8.0-docker.1}
     pull_policy: missing
     platform: linux/amd64
     init: true

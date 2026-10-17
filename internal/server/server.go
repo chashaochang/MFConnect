@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/hex"
@@ -48,12 +49,13 @@ type Config struct {
 }
 
 type Server struct {
-	releaseKey  string
-	easy        *easyTierManager
-	Config      Config
-	Store       *store.Store
-	mu          sync.Mutex
-	connections map[string]map[net.Conn]struct{}
+	publicTransportFactory func(context.Context, string) (*http.Transport, error)
+	releaseKey             string
+	easy                   *easyTierManager
+	Config                 Config
+	Store                  *store.Store
+	mu                     sync.Mutex
+	connections            map[string]map[net.Conn]struct{}
 }
 
 func New(c Config, st *store.Store) (*Server, error) {
@@ -314,6 +316,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if !ok || !store.DeviceAuthorized(st, p, svc.DeviceID) {
 				return errors.New("forbidden")
 			}
+			if svc.DockerManaged {
+				return errors.New("docker_automatically_managed")
+			}
 			if svc.Published != *in.Published {
 				svc.Revision++
 				svc.Published = *in.Published
@@ -323,6 +328,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return nil
 		})
 		if err != nil {
+			if err.Error() == "docker_automatically_managed" {
+				reject(w, 409, err.Error())
+				return
+			}
 			reject(w, 403, "forbidden")
 			return
 		}
@@ -531,6 +540,10 @@ func (s *Server) sync(w http.ResponseWriter, r *http.Request) {
 		reject(w, 400, "invalid_docker_report")
 		return
 	}
+	if !s.validPublicIngress(in.PublicIngress) {
+		reject(w, 400, "invalid_public_ingress")
+		return
+	}
 	managed := dockerKeys(in.Docker)
 	out := core.SyncResponse{Gateway: gatewayPin != "", Transport: in.Transport, TunnelHost: s.Config.TunnelHost, TunnelPort: s.Config.TunnelPort, Assignments: []core.Assignment{}}
 	err = s.Store.Update(func(st *store.State) error {
@@ -577,6 +590,14 @@ func (s *Server) sync(w http.ResponseWriter, r *http.Request) {
 			}
 			out.EasyTier = &core.EasyTierAssignment{Network: current.ID, Secret: current.EasyTierSecret, Peer: "tcp://" + net.JoinHostPort(s.Config.TunnelHost, strconv.Itoa(current.EasyTierPort))}
 		}
+		if current.PublicIngress != in.PublicIngress {
+			for key, session := range st.Sessions {
+				if svc := st.Services[session.ServiceID]; svc.DeviceID == d.ID && !s.serviceHost(svc, session.Host) {
+					delete(st.Sessions, key)
+				}
+			}
+		}
+		current.PublicIngress = in.PublicIngress
 		current.LastSeen = time.Now().Unix()
 		if in.Docker != nil {
 			current.Docker = in.Docker
@@ -643,6 +664,9 @@ func (s *Server) sync(w http.ResponseWriter, r *http.Request) {
 			}
 			wasAvailable := svc.DockerAvailable
 			svc.DockerManaged = svc.DockerManaged || managed[target.Key]
+			if svc.DockerManaged {
+				svc.Published = current.ConnectEnabled
+			}
 			svc.DockerAvailable = managed[target.Key] && in.Docker.Available(target.Key)
 			if svc.Target != target {
 				svc.Target = target
@@ -657,7 +681,7 @@ func (s *Server) sync(w http.ResponseWriter, r *http.Request) {
 				invalidate(st, svc.ID)
 			}
 			st.Services[svc.ID] = svc
-			out.Assignments = append(out.Assignments, core.Assignment{ServiceID: svc.ID, Key: target.Key, RemotePort: svc.RemotePort, Published: svc.Published && (current.ConnectID == "" || current.ConnectEnabled) && store.DockerAvailable(current, svc)})
+			out.Assignments = append(out.Assignments, core.Assignment{ServiceID: svc.ID, Key: target.Key, RemotePort: svc.RemotePort, Published: svc.Published && store.RemoteEnabled(current) && store.DockerAvailable(current, svc)})
 		}
 		for id, svc := range st.Services {
 			if svc.DeviceID == d.ID && !keys[svc.Target.Key] {
@@ -689,10 +713,11 @@ func (s *Server) sync(w http.ResponseWriter, r *http.Request) {
 func (s *Server) launch(w http.ResponseWriter, r *http.Request, p store.Principal) {
 	id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/services/"), "/launches")
 	var in struct {
-		Path      string `json:"path"`
-		NonceHash string `json:"nonce_sha256"`
+		NavigationContract int    `json:"navigation_contract"`
+		Path               string `json:"path"`
+		NonceHash          string `json:"nonce_sha256"`
 	}
-	if body(r, &in) != nil || !core.SafePath(in.Path) {
+	if body(r, &in) != nil || !core.SafePath(in.Path) || (in.NavigationContract != 0 && in.NavigationContract != 1) {
 		reject(w, 400, "invalid_request")
 		return
 	}
@@ -704,6 +729,21 @@ func (s *Server) launch(w http.ResponseWriter, r *http.Request, p store.Principa
 	if in.Path == "" {
 		in.Path = "/"
 	}
+	publicOrigin := ""
+	if in.NavigationContract == 1 {
+		state := s.Store.View()
+		svc, ok := state.Services[id]
+		d := state.Devices[svc.DeviceID]
+		if !ok || !svc.Published || !store.Authorized(&state, p, svc) {
+			reject(w, 403, "forbidden")
+			return
+		}
+		host := core.PublicHost(d.PublicIngress, svc.HostKey)
+		if s.verifyPublic(r.Context(), d, host) {
+			publicOrigin = "https://" + host
+		}
+	}
+	expires := time.Now().Unix() + 30
 	token := core.Random()
 	var origin string
 	err = s.Store.Update(func(st *store.State) error {
@@ -712,14 +752,28 @@ func (s *Server) launch(w http.ResponseWriter, r *http.Request, p store.Principa
 			return errors.New("forbidden")
 		}
 		origin = s.origin(svc, r)
-		st.Tickets[core.Hash(token)] = store.Ticket{UserID: p.ID, ServiceID: id, Revision: svc.Revision, Host: strings.TrimPrefix(origin, "https://"), Path: in.Path, NonceHash: in.NonceHash, Expires: time.Now().Add(30 * time.Second).Unix()}
+		if !s.publicServiceAllowed(st.Devices[svc.DeviceID], svc, strings.TrimPrefix(publicOrigin, "https://")) {
+			publicOrigin = ""
+		}
+		st.Tickets[core.Hash(token)] = store.Ticket{PublicOrigin: publicOrigin, UserID: p.ID, ServiceID: id, Revision: svc.Revision, Host: strings.TrimPrefix(origin, "https://"), Path: in.Path, NonceHash: in.NonceHash, Expires: expires}
 		return nil
 	})
 	if err != nil {
 		reject(w, 403, "forbidden")
 		return
 	}
-	respond(w, 201, map[string]any{"mode": "relay", "origin": origin, "bootstrap_url": origin + "/_mf/bootstrap", "bootstrap_path": "/_mf/bootstrap", "bootstrap_method": "POST", "ticket": token, "expires_in": 30, "service_id": id})
+	out := map[string]any{"mode": "relay", "origin": origin, "bootstrap_url": origin + "/_mf/bootstrap", "bootstrap_path": "/_mf/bootstrap", "bootstrap_method": "POST", "ticket": token, "expires_in": 30, "service_id": id}
+	if in.NavigationContract == 1 {
+		out["navigation_contract"] = 1
+		out["navigation_origins"] = []string{origin}
+		out["public_gateway_origin"] = nil
+		out["navigation_expires_at"] = expires
+		if publicOrigin != "" {
+			out["public_gateway_origin"] = publicOrigin
+			out["navigation_origins"] = []string{origin, publicOrigin}
+		}
+	}
+	respond(w, 201, out)
 }
 
 // Hook is bound only on a private/loopback listener. Every frp operation checks
@@ -775,7 +829,7 @@ func (s *Server) Hook(w http.ResponseWriter, r *http.Request) {
 			match = op == "NewUserConn" || (raw.Type == "tcp" && raw.Port == d.PortalPort && raw.Group == "")
 		}
 		for _, svc := range st.Services {
-			if svc.DeviceID == id && svc.Published && (d.ConnectID == "" || d.ConnectEnabled) && store.DockerAvailable(d, svc) && raw.Name == id+"."+svc.ID {
+			if svc.DeviceID == id && svc.Published && store.RemoteEnabled(d) && store.DockerAvailable(d, svc) && raw.Name == id+"."+svc.ID {
 				match = true
 				if op == "NewProxy" && (raw.Type != "tcp" || raw.Port != svc.RemotePort || raw.Group != "") {
 					match = false

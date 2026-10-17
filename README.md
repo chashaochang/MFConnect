@@ -61,7 +61,7 @@ docker run -d --name mfconnect-docker-gateway \
   --health-cmd 'python3 /opt/mfconnect/gateway.py health' \
   --health-interval 10s --health-timeout 5s --health-retries 60 \
   --log-driver json-file --log-opt max-size=10m --log-opt max-file=3 \
-  ghcr.io/chashaochang/mfconnect-gateway:0.7.2
+  ghcr.io/chashaochang/mfconnect-gateway:0.8.0
 ```
 
 执行 `docker ps`，等待网关显示 **healthy** 后启动中继服务。如果未就绪，用 `docker logs --tail=100 mfconnect-docker-gateway` 检查证书或 DNS 配置。
@@ -81,7 +81,7 @@ docker run -d --name mfconnect-docker-server \
   -v mfconnect-docker-data:/var/lib/mfconnect -v mfconnect-docker-tls:/etc/mfconnect/tls:ro \
   -v mfconnect-docker-updates:/var/lib/mfconnect-updates \
   --log-driver json-file --log-opt max-size=10m --log-opt max-file=3 \
-  ghcr.io/chashaochang/mfconnect-server:0.7.2-docker.1 bootstrap
+  ghcr.io/chashaochang/mfconnect-server:0.8.0-docker.1 bootstrap
 
 docker ps
 ```
@@ -92,7 +92,7 @@ docker ps
 
 ```bash
 curl -fL --proto '=https' --proto-redir '=https' --retry 3 \
-  https://raw.githubusercontent.com/chashaochang/MFConnect/v0.7.2/compose.yaml \
+  https://raw.githubusercontent.com/chashaochang/MFConnect/v0.8.0/compose.yaml \
   -o compose.yaml
 docker compose up -d --wait --wait-timeout 660
 docker compose ps
@@ -106,7 +106,7 @@ docker compose ps
 
 ```bash
 curl -fL --proto '=https' --proto-redir '=https' --retry 3 \
-  https://raw.githubusercontent.com/chashaochang/MFConnect/v0.7.2/install.sh \
+  https://raw.githubusercontent.com/chashaochang/MFConnect/v0.8.0/install.sh \
   -o mfconnect-install.sh && sh mfconnect-install.sh --docker
 ```
 

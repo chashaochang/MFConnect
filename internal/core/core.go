@@ -21,7 +21,7 @@ import (
 	"mfconnect/internal/updates"
 )
 
-const Version = "0.7.2"
+const Version = "0.8.0"
 const FRPVersion = "0.71.1"
 const EasyTierVersion = "2.6.4"
 
@@ -149,6 +149,7 @@ type Assignment struct {
 }
 
 type SyncRequest struct {
+	PublicIngress      string            `json:"public_ingress,omitempty"`
 	Docker             *DockerReport     `json:"docker,omitempty"`
 	PortalSupported    bool              `json:"portal_supported,omitempty"`
 	Software           *updates.Software `json:"software,omitempty"`
@@ -177,13 +178,15 @@ type EasyTierAssignment struct {
 }
 
 type AccessRequest struct {
-	Host    string `json:"host"`
-	Session string `json:"session"`
+	CredentialHash string `json:"credential_hash,omitempty"`
+	Host           string `json:"host"`
+	Session        string `json:"session"`
 }
 
 type AccessResponse struct {
-	ServiceID string `json:"service_id"`
-	Target    Target `json:"target"`
-	Revision  int    `json:"revision"`
-	Expires   int64  `json:"expires"`
+	StripAuthorization bool   `json:"strip_authorization,omitempty"`
+	ServiceID          string `json:"service_id"`
+	Target             Target `json:"target"`
+	Revision           int    `json:"revision"`
+	Expires            int64  `json:"expires"`
 }

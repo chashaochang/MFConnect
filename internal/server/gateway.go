@@ -38,6 +38,9 @@ func (s *Server) gateway(w http.ResponseWriter, r *http.Request) {
 		reject(w, 404, "service_unavailable")
 		return
 	}
+	if relayEscape(w, r) {
+		return
+	}
 	if r.URL.Path == "/_mf/bootstrap" {
 		s.bootstrap(w, r, svc)
 		return
@@ -64,6 +67,9 @@ func (s *Server) gateway(w http.ResponseWriter, r *http.Request) {
 	}
 	if site := r.Header.Get("Sec-Fetch-Site"); site == "cross-site" || site == "same-site" {
 		reject(w, 403, "cross_origin_request")
+		return
+	}
+	if s.maybePublicApp(w, r, d, svc, session, sessionKey) {
 		return
 	}
 	s.proxy(w, r, svc, sessionKey, session.Expires)
@@ -104,7 +110,7 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request, svc store.Ser
 		}
 		delete(st.Tickets, ticketKey)
 		path = ticket.Path
-		st.Sessions[core.Hash(sessionToken)] = store.Session{Host: hostname(r.Host), UserID: ticket.UserID, ServiceID: svc.ID, Revision: current.Revision, Expires: time.Now().Add(time.Duration(s.Config.SessionSeconds) * time.Second).Unix()}
+		st.Sessions[core.Hash(sessionToken)] = store.Session{PublicOrigin: ticket.PublicOrigin, NavigationExpires: ticket.Expires, Host: hostname(r.Host), UserID: ticket.UserID, ServiceID: svc.ID, Revision: current.Revision, Expires: time.Now().Add(time.Duration(s.Config.SessionSeconds) * time.Second).Unix()}
 		return nil
 	})
 	if err != nil {
@@ -112,6 +118,9 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request, svc store.Ser
 		return
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: sessionToken, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: s.Config.SessionSeconds})
+	if _, e := r.Cookie(routeCookie); e == nil {
+		http.SetCookie(w, &http.Cookie{Name: routeCookie, Value: "", Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Location", path)

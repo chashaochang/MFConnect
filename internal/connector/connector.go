@@ -28,9 +28,10 @@ import (
 )
 
 type Config struct {
-	EntryOrigin     string `json:"entry_origin,omitempty"`
-	APIBaseURL      string `json:"api_base_url,omitempty"`
-	DockerDiscovery *bool  `json:"docker_discovery,omitempty"`
+	PublicGateway   *PublicGatewayConfig `json:"public_gateway,omitempty"`
+	EntryOrigin     string               `json:"entry_origin,omitempty"`
+	APIBaseURL      string               `json:"api_base_url,omitempty"`
+	DockerDiscovery *bool                `json:"docker_discovery,omitempty"`
 	docker          *core.DockerReport
 	WebGUIURL       string `json:"webgui_url,omitempty"`
 	path            string
@@ -78,6 +79,11 @@ func Load(path string) (Config, error) {
 		return c, err
 	}
 	c.path = path
+	if c.PublicGateway != nil {
+		if err := c.PublicGateway.Validate(); err != nil {
+			return c, err
+		}
+	}
 	if c.WebGUIURL == "" {
 		c.WebGUIURL = defaultWebGUIURL()
 	}
@@ -225,6 +231,9 @@ func Sync(ctx context.Context, c Config) (core.SyncResponse, error) {
 		return out, errors.New("device has not been enrolled")
 	}
 	in := core.SyncRequest{Targets: c.Targets, Docker: c.docker, Transport: c.Transport, PortalSupported: c.WebGUIURL != "" && c.GatewayPort > 0}
+	if c.PublicGateway != nil {
+		in.PublicIngress = c.PublicGateway.Origin
+	}
 	if c.path != "" {
 		in.Software, in.UpdateReport = updates.PluginSoftware(c.path)
 		if in.Software != nil {

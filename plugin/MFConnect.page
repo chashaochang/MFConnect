@@ -24,10 +24,12 @@ $mfVars = @parse_ini_file('/var/local/emhttp/var.ini');
 <dl id="mf-connect-status"></dl>
 <p>连接 ID 和远程访问开关在 RaidMate 的此 NAS → MF Connect 设置中修改，保存后会自动同步到这里。</p>
 <p id="mf-entry"></p>
+<label><input type="checkbox" id="mf-public-direct"> 浏览器访问使用公网直连</label>
+<p id="mf-public-hint"></p><button type="button" id="mf-public-save">保存访问方式</button>
 </section>
 <section class="mf-panel" id="mf-apps" hidden>
 <h3>自动发现的 Docker 应用</h3>
-<p>每 30 秒读取容器 WebUI。新应用需启用远程访问后才能通过中继打开；没有 WebUI 的容器会显示原因。</p>
+<p>开启 MF Connect 后，自动发现并接入可用的 Docker WebUI，每 30 秒更新。新建或重建的应用自动关联，无需逐个发布；没有 WebUI 或目标不可达时显示原因。</p>
 <p id="mf-discovery-status"></p><div id="mf-docker-apps"></div>
 <h3>手动配置的应用</h3>
 <p>填写应用的 HTTP 或 HTTPS 地址，例如 http://192.168.50.96:8096。新增、修改或删除应用后，点击保存。</p>

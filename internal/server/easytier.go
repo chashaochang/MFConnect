@@ -75,11 +75,11 @@ func (s *Server) deviceAccess(w http.ResponseWriter, r *http.Request) {
 	session, ok := st.Sessions[core.Hash(in.Session)]
 	svc, found := st.Services[session.ServiceID]
 	p, present := st.Principals[session.UserID]
-	if !ok || !found || !present || session.Expires <= time.Now().Unix() || svc.DeviceID != d.ID || !svc.Published || session.Revision != svc.Revision || (!s.serviceHost(svc, in.Host) || !s.sessionHost(session, svc, in.Host)) || !store.Authorized(&st, p, svc) || (st.Devices[d.ID].Transport != "easytier" && st.Devices[d.ID].GatewayPin == "") {
+	if !ok || !found || !present || session.Expires <= time.Now().Unix() || svc.DeviceID != d.ID || !svc.Published || session.Revision != svc.Revision || (!(s.serviceHost(svc, in.Host) || s.publicServiceAllowed(d, svc, in.Host)) || !s.sessionHost(session, svc, in.Host)) || !store.Authorized(&st, p, svc) || (st.Devices[d.ID].Transport != "easytier" && st.Devices[d.ID].GatewayPin == "") {
 		reject(w, 401, "invalid_session")
 		return
 	}
-	respond(w, 200, core.AccessResponse{ServiceID: svc.ID, Target: svc.Target, Revision: svc.Revision, Expires: session.Expires})
+	respond(w, 200, core.AccessResponse{StripAuthorization: s.controlCredential(in.CredentialHash), ServiceID: svc.ID, Target: svc.Target, Revision: svc.Revision, Expires: session.Expires})
 }
 
 type easyTierRoute struct {

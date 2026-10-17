@@ -173,7 +173,7 @@ final class MFSettings {
                 throw new MFSettingsError('endpoint_contract_2_unavailable',409);
             }
             $messages=['connect_id_taken'=>'这个连接 ID 已被使用，请换一个。','invalid_connect_id'=>'连接 ID 应为 1–32 位字母、数字或中间连字符。',
-                'connector_upgrade_required'=>'请先升级云端和插件。','invalid_device_signature'=>'设备接入身份已失效。'];
+                'connector_upgrade_required'=>'请先升级云端和插件。','invalid_device_signature'=>'设备接入身份已失效。','docker_automatically_managed'=>'Docker 应用随 MF Connect 自动管理，无需单独发布。'];
             throw new MFSettingsError($messages[$out['error']]??'暂时无法连接云端，请检查连接状态。',(int)$out['status']);
         }
         return $out['data'];
@@ -288,6 +288,13 @@ final class MFSettings {
             return '设备绑定成功，连接已启动。';
         }
         if (!$c || empty($c['device_id'])) throw new MFSettingsError('请先绑定此 NAS。', 409);
+        if ($action === 'save_web_access') {
+            if (!is_bool($data['browser_public_direct']??null)) throw new MFSettingsError('请选择有效的访问方式。',400);
+            $current=$this->deviceCall(['action'=>'status']);
+            $saved=$this->deviceCall(['action'=>'configure','id'=>$current['id'],'enabled'=>$current['enabled'],'browser_public_direct'=>$data['browser_public_direct']]);
+            if (($saved['browser_public_direct']??null)!==$data['browser_public_direct']) throw new MFSettingsError('访问方式未确认保存，请刷新重试。',502);
+            return '浏览器访问方式已保存。';
+        }
         if ($action === 'save_targets') {
             $input = $data['targets'] ?? null;
             if (!is_array($input) || !array_is_list($input) || count($input) > 64) throw new MFSettingsError('最多配置 64 个应用。', 400);

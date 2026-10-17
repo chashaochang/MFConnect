@@ -37,25 +37,28 @@ type Installation struct {
 	Consumed       bool   `json:"consumed,omitempty"`
 }
 type Device struct {
-	Docker          *core.DockerReport  `json:"docker,omitempty"`
-	ConnectID       string              `json:"connect_id,omitempty"`
-	ConnectEnabled  bool                `json:"connect_enabled,omitempty"`
-	PortalSupported bool                `json:"portal_supported,omitempty"`
-	PortalPort      int                 `json:"portal_port,omitempty"`
-	Software        *updates.Software   `json:"software,omitempty"`
-	Transport       string              `json:"transport,omitempty"`
-	EasyTierSecret  string              `json:"easytier_secret,omitempty"`
-	EasyTierPort    int                 `json:"easytier_port,omitempty"`
-	GatewayPort     int                 `json:"gateway_port,omitempty"`
-	GatewayPin      string              `json:"gateway_pin,omitempty"`
-	ID              string              `json:"id"`
-	Name            string              `json:"name"`
-	Owner           string              `json:"owner"`
-	PublicKey       string              `json:"public_key"`
-	TunnelTokenHash string              `json:"tunnel_token_hash"`
-	Revoked         bool                `json:"revoked"`
-	LastSeen        int64               `json:"last_seen"`
-	Network         *core.DeviceNetwork `json:"network,omitempty"`
+	ConnectConfigured   bool                `json:"connect_configured,omitempty"`
+	BrowserPublicDirect bool                `json:"browser_public_direct"`
+	PublicIngress       string              `json:"public_ingress,omitempty"`
+	Docker              *core.DockerReport  `json:"docker,omitempty"`
+	ConnectID           string              `json:"connect_id,omitempty"`
+	ConnectEnabled      bool                `json:"connect_enabled,omitempty"`
+	PortalSupported     bool                `json:"portal_supported,omitempty"`
+	PortalPort          int                 `json:"portal_port,omitempty"`
+	Software            *updates.Software   `json:"software,omitempty"`
+	Transport           string              `json:"transport,omitempty"`
+	EasyTierSecret      string              `json:"easytier_secret,omitempty"`
+	EasyTierPort        int                 `json:"easytier_port,omitempty"`
+	GatewayPort         int                 `json:"gateway_port,omitempty"`
+	GatewayPin          string              `json:"gateway_pin,omitempty"`
+	ID                  string              `json:"id"`
+	Name                string              `json:"name"`
+	Owner               string              `json:"owner"`
+	PublicKey           string              `json:"public_key"`
+	TunnelTokenHash     string              `json:"tunnel_token_hash"`
+	Revoked             bool                `json:"revoked"`
+	LastSeen            int64               `json:"last_seen"`
+	Network             *core.DeviceNetwork `json:"network,omitempty"`
 }
 type Service struct {
 	DockerManaged   bool        `json:"docker_managed,omitempty"`
@@ -69,20 +72,24 @@ type Service struct {
 	Revision        int         `json:"revision"`
 }
 type Ticket struct {
-	UserID    string `json:"user_id"`
-	ServiceID string `json:"service_id"`
-	Revision  int    `json:"revision"`
-	Host      string `json:"host"`
-	Path      string `json:"path"`
-	NonceHash string `json:"nonce_hash"`
-	Expires   int64  `json:"expires"`
+	PublicOrigin string `json:"public_origin,omitempty"`
+	SourceOrigin string `json:"source_origin,omitempty"`
+	UserID       string `json:"user_id"`
+	ServiceID    string `json:"service_id"`
+	Revision     int    `json:"revision"`
+	Host         string `json:"host"`
+	Path         string `json:"path"`
+	NonceHash    string `json:"nonce_hash"`
+	Expires      int64  `json:"expires"`
 }
 type Session struct {
-	Host      string `json:"host,omitempty"`
-	UserID    string `json:"user_id"`
-	ServiceID string `json:"service_id"`
-	Revision  int    `json:"revision"`
-	Expires   int64  `json:"expires"`
+	PublicOrigin      string `json:"public_origin,omitempty"`
+	NavigationExpires int64  `json:"navigation_expires,omitempty"`
+	Host              string `json:"host,omitempty"`
+	UserID            string `json:"user_id"`
+	ServiceID         string `json:"service_id"`
+	Revision          int    `json:"revision"`
+	Expires           int64  `json:"expires"`
 }
 type State struct {
 	Installations map[string]Installation `json:"installations"`
@@ -229,7 +236,7 @@ func (s *Store) Update(fn func(*State) error) error {
 }
 func Authorized(st *State, p Principal, service Service) bool {
 	d := st.Devices[service.DeviceID]
-	return DeviceAuthorized(st, p, service.DeviceID) && (d.ConnectID == "" || d.ConnectEnabled) && DockerAvailable(d, service)
+	return DeviceAuthorized(st, p, service.DeviceID) && RemoteEnabled(d) && DockerAvailable(d, service)
 }
 
 func DockerAvailable(d Device, svc Service) bool {
@@ -245,4 +252,10 @@ func DeviceAuthorized(st *State, p Principal, id string) bool {
 		return p.DeviceID == id && p.OwnerID == d.Owner
 	}
 	return p.Admin || d.Owner == p.ID
+}
+
+// Preserve pre-Connect legacy manual services until the user explicitly saves
+// the device switch. An explicit off always closes every MF remote route.
+func RemoteEnabled(d Device) bool {
+	return d.ConnectEnabled || (!d.ConnectConfigured && d.ConnectID == "")
 }

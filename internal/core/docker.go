@@ -50,7 +50,7 @@ func (r DockerReport) Validate() error {
 			return errors.New("invalid application identity")
 		}
 		switch a.State {
-		case "ready", "stopped", "no_webui", "invalid_webui", "network_unresolved", "identity_conflict":
+		case "ready", "stopped", "no_webui", "invalid_webui", "network_unresolved", "identity_conflict", "unreachable":
 		default:
 			return errors.New("invalid application state")
 		}

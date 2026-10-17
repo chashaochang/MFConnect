@@ -23,18 +23,31 @@ func (s *Server) deviceConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Action    string `json:"action"`
-		ID        string `json:"id"`
-		Enabled   *bool  `json:"enabled"`
-		ServiceID string `json:"service_id"`
-		Published *bool  `json:"published"`
-		Host      string `json:"host"`
+		BrowserPublicDirect *bool  `json:"browser_public_direct"`
+		Ticket              string `json:"ticket"`
+		Nonce               string `json:"nonce"`
+		SourceOrigin        string `json:"source_origin"`
+		CredentialHash      string `json:"credential_hash"`
+		Action              string `json:"action"`
+		ID                  string `json:"id"`
+		Enabled             *bool  `json:"enabled"`
+		ServiceID           string `json:"service_id"`
+		Published           *bool  `json:"published"`
+		Host                string `json:"host"`
 	}
 	if json.Unmarshal(b, &in) != nil {
 		reject(w, 400, "invalid_request")
 		return
 	}
 	switch in.Action {
+	case "public_bootstrap":
+		s.publicBootstrap(w, r, d, in.Host, in.Ticket, in.Nonce, in.SourceOrigin)
+	case "public_portal_access":
+		if !s.publicPortalAllowed(d, in.Host) {
+			reject(w, 403, "portal_disabled")
+			return
+		}
+		respond(w, 200, map[string]any{"allowed": true, "strip_authorization": s.controlCredential(in.CredentialHash)})
 	case "endpoints":
 		out := s.endpointInfo(r)
 		out["device_id"], out["connect"] = d.ID, s.connectInfo(d, r)
@@ -59,7 +72,7 @@ func (s *Server) deviceConnect(w http.ResponseWriter, r *http.Request) {
 			reject(w, 400, "invalid_request")
 			return
 		}
-		_, code := s.setConnect(d.ID, in.ID, *in.Enabled)
+		_, code := s.setConnect(d.ID, in.ID, *in.Enabled, in.BrowserPublicDirect)
 		if code != "" {
 			connectError(w, code)
 		} else {
@@ -94,6 +107,9 @@ func (s *Server) deviceConnect(w http.ResponseWriter, r *http.Request) {
 			if !ok || current.Revoked || svc.DeviceID != d.ID {
 				return errors.New("forbidden")
 			}
+			if svc.DockerManaged {
+				return errors.New("docker_automatically_managed")
+			}
 			if svc.Published != *in.Published {
 				svc.Revision++
 				svc.Published = *in.Published
@@ -103,6 +119,10 @@ func (s *Server) deviceConnect(w http.ResponseWriter, r *http.Request) {
 			return nil
 		})
 		if err != nil {
+			if err.Error() == "docker_automatically_managed" {
+				reject(w, 409, err.Error())
+				return
+			}
 			reject(w, 403, "forbidden")
 			return
 		}

@@ -1,6 +1,6 @@
 # API 与客户端接入
 
-本文适用于 0.7.0。`endpoint_contract=2` 是地址协议版本，与软件版本分别管理。所有域名、标识和地址均为示例。
+本文适用于 **服务端／插件 0.8.0**。本文是客户端最终契约，设置能力版本为 1。`endpoint_contract=2` 是地址协议版本，与软件版本分别管理。所有域名、标识和地址均为示例。
 
 ## 地址模型
 
@@ -15,7 +15,7 @@
 
 没有固定 `connect` 前缀，没有固定域名层级，没有 `<应用>.<ID>.D`。入口使用标准 HTTPS 443；统一部署配置只接受 HTTPS DNS origin，不接受端口、路径、账号、query 或 fragment。
 
-连接 ID 仍由用户在 App 输入，1–32 位，保留原有保留字（包括 `api`）。新增应用 HostKey 为 `app-` + 32 位随机 hex，36 位，不与用户 ID 命名空间重叠。HostKey 在服务创建时持久保存，并在事务中检查唯一。已有 HostKey、service_id、Docker application_id、target_key 和发布状态保留。Docker application_id 与 HostKey 是两个字段，客户端不得相互推导。多个 NAS 上同名容器拥有各自的服务和应用来源。
+连接 ID 仍由用户在 App 输入，1–32 位，保留原有保留字（包括 `api`）。新增应用 HostKey 为 `app-` + 32 位随机 hex，36 位，不与用户 ID 命名空间重叠。HostKey 在服务创建时持久保存，并在事务中检查唯一。已有 HostKey、service_id、Docker application_id、target_key 保留；0.8.0 起 Docker 发布状态迁移为跟随设备总开关，手动应用的原有选择保留。Docker application_id 与 HostKey 是两个字段，客户端不得相互推导。多个 NAS 上同名容器拥有各自的服务和应用来源。
 
 迁移预检及配置连接 ID 时检查整个实例的主机归属：NAS、应用、API、浏览器、隧道及兼容域名。冲突时拒绝配置，不静默改动已有地址。已撤销 NAS 的 ID 继续保留，避免旧地址归属易主。
 
@@ -45,6 +45,11 @@
     "unified_entry": true,
     "api_base_url": 1,
     "docker_discovery": 1,
+    "docker_auto_publish": 1,
+    "browser_public_direct": 1,
+    "launch_navigation": 1,
+    "updates": 1,
+    "webdav": false,
     "self_install": 1,
     "legacy_api": false,
     "app_host_layout": "flat",
@@ -52,6 +57,8 @@
   },
   "connect": {
     "id": "home", "enabled": true, "online": true,
+    "browser_public_direct": false,
+    "web_access": {"schema_version":1,"mode":"relay_only","public_ingress_configured":false,"status":"disabled"},
     "entry_url": "https://example.com/home",
     "origin": "https://home.example.com"
   },
@@ -158,20 +165,57 @@ App 继续使用 `api_base_url`，同时发送契约 2 Header。`canonical_api_b
     "service_id": "svc_example",
     "origin": "https://app-0123456789abcdef0123456789abcdef.example.com",
     "entry_path": "/web/",
-    "published": false,
+    "published": true,
     "available": true,
-    "relay_enabled": false
+    "relay_enabled": true
   }]
 }
 ```
 
 `container_id` 用于匹配当前 Docker 列表，`application_id` 是持久身份，不能通过名称或端口猜测 `service_id`。可用 `container_id`（完整 ID 或至少 12 位前缀）或 `application_id` 查询，二者不能同时指定；前缀存在歧义时返回 409。
 
-目录状态为 `ready/unavailable/disabled/unsupported`。应用状态为 `ready/stopped/no_webui/invalid_webui/network_unresolved/identity_conflict`；无有效 WebUI 时 `origin` 和 `service_id` 可能为空。设备心跳超过 45 秒或扫描超过 90 秒，`fresh=false`、`available=false`。`available` 不代表 HTTP 健康检查通过。
+目录状态为 `ready/unavailable/disabled/unsupported`。应用状态为 `ready/stopped/no_webui/invalid_webui/network_unresolved/identity_conflict/unreachable`；无有效 WebUI 时 `origin` 和 `service_id` 可能为空。设备心跳超过 45 秒或扫描超过 90 秒，`fresh=false`、`available=false`。0.8.0 插件在 NAS 上对声明的完整 WebUI 地址发送 HEAD 探测；证书验证失败、无法连接或 HTTP 5xx 标记 `unreachable`，不会自动开放。401/403/405 仍说明 HTTP 服务存在，具体登录和页面功能由应用负责。旧插件未升级时，`available` 仍只表示地址解析及运行状态。
 
-新发现服务默认不发布。用户通过 `PATCH /v1/services/{service_id}`、`{"published":true}` 开启。`relay_enabled` 还要求设备在线、发现可用和远程开关允许；通道尚未建立时仍可能返回 503。
+**0.8.0 起自动发布，无需应用管理或逐应用 publish。** 设备 `connect.enabled=true` 时，服务端在每次设备同步及总开关保存时自动设置 Docker 服务可访问；新发现、重建均适用。目录增加 `publication_mode:"automatic"`。`published` 保留兼容，表示总开关允许；`relay_enabled` 还要求设备在线、发现及目标可用。实际通道尚未建立时仍可能返回 503。
 
-关联保存在插件私有 `docker-discovery.json`。容器重建后按 Compose 身份、Unraid 模板、容器名恢复关联；只有名字可用且同时改名重建时无法保证原身份。停止、删除或发现失败保留服务身份和发布选择，但拒绝访问并使旧会话失效。
+旧 `PATCH /v1/services/{id}` 和设备 `action=publish` 对 Docker 服务返回 409 `docker_automatically_managed`，对手动内网应用保留原行为。客户端探测 `docker_auto_publish:1` 后不显示逐应用发布控制，也不能用循环调用旧 API 实现自动发布。关闭总开关会立即使既有网页会话失效，停止／删除／目标变化会撤销对应应用访问；恢复后使用相同持久服务 ID 和域名。
+
+关联保存在插件私有 `docker-discovery.json`。容器重建后按 Compose 身份、Unraid 模板、容器名恢复关联；只有名字可用且同时改名重建时无法保证原身份。停止、删除或发现失败保留服务身份，但拒绝访问并使旧会话失效。
+
+## 浏览器公网直连设置（能力版本 1）
+
+`GET /v1/devices/{device_id}/connect` 读取；`PUT` 同一路径保存，并返回完整最终设置。请求示例：
+
+```json
+{"id":"home","enabled":true,"browser_public_direct":true}
+```
+
+`browser_public_direct` 为严格 JSON boolean，默认 **false**。旧请求不传该字段时保留当前值；不会重置用户偏好。它与 `enabled` 分开：总开关关闭时所有 MF 远程访问关闭，偏好可保留。保存成功后应使用返回值，再 GET 回读确认。NAS 本地契约 2 的 `connect`、云端 session、ID resolve 和设备签名 `status/overview/endpoints` 都返回同一设置。插件设置页也可修改。仅当前 NAS 的会话、所有者或管理员可保存；这不影响普通 RaidMate LAN/DDNS 原生登录。
+
+```json
+{
+  "id":"home", "enabled":true, "online":true,
+  "entry_url":"https://example.com/home",
+  "origin":"https://home.example.com",
+  "browser_public_direct":true,
+  "web_access":{
+    "schema_version":1,
+    "mode":"public_preferred",
+    "public_ingress_configured":false,
+    "status":"not_configured"
+  }
+}
+```
+
+`web_access.mode` 为 `relay_only/public_preferred`；`status` 为 `disabled/not_configured/verify_on_access`。`public_ingress_configured=true` 仅表示 NAS 声明了完整网关，**不是可达验证通过**。状态不会伪装成实时探测结果。
+
+公网地址来自 NAS 管理员保存的 `public_gateway.origin`，经设备签名同步；不取 `network.public_ip`，不猜 Docker 端口、不采信容器随意提供的外域。该可选网关需要独立 DNS 命名空间、可信 HTTPS 通配符证书和真实公网 443 转发，部署要求见 deployment.md。它仍运行 MF 会话鉴权，不直接暴露裸应用。每次准备切换时，云端解析公网 DNS（拒绝内网／保留地址、防 DNS 重绑定）、校验 HTTPS 证书且不跟随重定向，并挑战已登记 NAS 的 Ed25519 身份。随后浏览器进行无凭据可达探测，超时使用中继。
+
+开启时，浏览器入口和 App WebUI 使用相同选路：正常入口和应用 `origin/bootstrap_url` **仍是云端中继来源**；App launch 必须声明 `navigation_contract:1` 才允许跨 origin 交接，旧客户端保持中继。云端通过检测后由网关导航到 NAS 公网来源。应用使用 30 秒、单次、绑定 NAS/应用/目标 Host/来源 Origin 的表单票据换 host-only Cookie；控制 Bearer、刷新令牌和 NAS 原生 Cookie不跨域转发。关闭公网偏好会撤销已有直连应用会话，活动直连请求每 2 秒复核授权（请求超时上限 3 秒），NAS 网页仍要求 Unraid 原生登录。
+
+客户端不得拼接公网 URL，也不应给任意新域发送 Authorization。原 bootstrap POST 流程不变；WebView 只允许本次受认证 launch 返回的确切 `navigation_origins`，不得用 suffix／通配符放行其他 NAS 或应用。每次 launch 替换旧允许列表。Cookie、Storage 和下载凭据保持来源隔离。直连 NAS 原生来源与中继来源的登录 Cookie 隔离，首次直连可能需要原生登录。无公网网关、云端探测失败或浏览器探测失败时均使用原中继链路；探测成功后网络再中断不保证当前页面无缝恢复，可重新从中继入口打开。浏览器禁用 JavaScript 时，选路页面提供“使用中继”链接。
+
+`/_mf/public-probe`、`/_mf/bootstrap`、`/_mf/relay` 是网页网关内部路径，App 不调用它们替代控制 API。WebDAV 没有独立配置、鉴权或转发能力契约，能力固定 `webdav:false`，本轮不提供开关；普通 HTTP WebUI 代理不能据此宣称支持 WebDAV 客户端。
 
 ## 应用启动
 
@@ -180,9 +224,43 @@ App 继续使用 `api_base_url`，同时发送契约 2 Header。`canonical_api_b
 3. 校验返回的 `origin` 和完整 `bootstrap_url` 属于已确认的服务来源。票据有效 30 秒；不要把票据放进 URL。
 4. WebView 以表单 POST `ticket=<票据>&nonce=<原nonce>` 到返回的 bootstrap URL，不携带控制 Bearer。
 
+支持 `launch_navigation:1` 的服务端接受以下扩展请求：
+
+```json
+{"path":"/web/","nonce_sha256":"<SHA-256小写hex>","navigation_contract":1}
+```
+
+响应扩展（下列是结构示例，不表示当前实例已配置公网）：
+
+```json
+{
+  "mode":"relay",
+  "origin":"https://app-0123456789abcdef0123456789abcdef.example.com",
+  "bootstrap_url":"https://app-0123456789abcdef0123456789abcdef.example.com/_mf/bootstrap",
+  "bootstrap_method":"POST",
+  "bootstrap_path":"/_mf/bootstrap",
+  "ticket":"<一次性票据>",
+  "expires_in":30,
+  "service_id":"svc_example",
+  "navigation_contract":1,
+  "navigation_origins":[
+    "https://app-0123456789abcdef0123456789abcdef.example.com",
+    "https://app-0123456789abcdef0123456789abcdef.direct.example.net"
+  ],
+  "public_gateway_origin":"https://app-0123456789abcdef0123456789abcdef.direct.example.net",
+  "navigation_expires_at":1790000030
+}
+```
+
+`mode:"relay"` 表示 bootstrap 从中继开始，不能据此判断最终数据路径。只有开关开启且云端在 **launch 时** 完成目标 HTTPS／NAS 身份验证，响应才带第二个 origin。否则 `public_gateway_origin:null`、`navigation_origins:[origin]`，`navigation_expires_at` 仍为票据到期 Unix 秒。这不是公共发现页面提供的外域列表，而是当前应用经过鉴权的单次导航授权。
+
+该允许列表最多两个标准 HTTPS origin；第二个与第一应用共享同一个稳定 HostKey，但属于管理员明确配置的公网命名空间。不同应用使用不同 Host，不共享 Cookie 或 Storage。客户端应验证 `navigation_contract===1`、首项等于既有 `origin`、第二项（若有）严格等于非空 `public_gateway_origin`，拒绝路径、账号、端口、重复项及其他元素。不能从这些地址建立新的 API 信任或向其发送控制 Token。
+
+首次跨域交接须在 `navigation_expires_at` 前开始；服务端把精确公网 origin 和期限绑定在原票据／中继会话中，准备交接时再次验证当前设备、应用、配置、开关和可达性，并原子消费一次。实际交接票据的有效期不得超过该期限。随后网关先做浏览器侧无凭据可达探测，成功才表单 POST 到允许的公网 `/_mf/bootstrap`，失败则在原中继 origin 的 `/_mf/relay?path=...` 回退，短期固定中继防循环。已成功进入公网来源后的同源浏览不受首次交接期限影响，但所有请求继续校验服务端授权。未声明导航契约的旧 launch 不携带跨域授权，也不会在后续应用 GET 中突然切换来源。
+
 bootstrap 原子消费票据，设置 host-only `__Host-mf_session`，返回 303 到同源路径。票据重放、缺失或过期会话返回 401，跨源请求返回 403，上游不可达返回 503。Cookie 默认有效一小时，带 Secure、HttpOnly、SameSite=Lax、Path=/，不带 Domain。
 
-bootstrap 要求 POST，不接受 query；请求 Origin 和浏览器 Fetch Metadata 必须通过来源校验。手机平台需要实际验证原生 WebView 的 POST 导航行为，不能靠放宽来源校验适配。
+中继 bootstrap 要求 POST，不接受 query；请求 Origin 和浏览器 Fetch Metadata 必须通过来源校验。手机平台需要实际验证原生 WebView 的 POST 导航行为，不能靠放宽来源校验适配。
 
 ## 自助安装
 
@@ -198,7 +276,7 @@ bootstrap 要求 POST，不接受 query；请求 Origin 和浏览器 Fetch Metad
 
 `GET /v1/updates/server` 或 `GET /v1/devices/{device_id}/updates` 返回 `schema_version`、`component`、`current_version`、`latest`、`update_available`、`can_update`、`executor_online`、`check_error`、`checked_at`、`latest_job`。
 
-`latest` 提供 `release_id`、`version`、`notes`、`size` 和 `requires_restart`，也可能为 null。`check_error` 非空不能显示为“已是最新版”。只有有权限、执行器在线、存在更新且无冲突任务时才允许提交。
+`latest` 提供 `release_id`、`version`、`notes`、`size` 和 `requires_restart`，也可能为 null。`latest_job` 也可能为 null；任务版本可以早于 `current_version`，例如后来通过其他合法渠道更新。`can_update` **仅表示该调用者有更新权限**，不是“现在可点更新”。按钮还须检查 `executor_online && update_available && check_error==""` 且没有冲突任务。`check_error` 非空不能显示为“已是最新版”。只有有权限、执行器在线、存在更新且无冲突任务时才允许提交。
 
 在同一路径 POST `{"release_id":"<检查接口返回的ID>","request_id":"<随机8至64位标识>"}`。只接受发行 ID，不接受客户端提供的 URL 或命令。首次返回 202；相同请求幂等重试返回 200 和原任务。它们均不代表安装成功。
 
@@ -207,6 +285,97 @@ bootstrap 要求 POST，不接受 query；请求 Origin 和浏览器 Fetch Metad
 任务返回 `id`、`component`、可选 `device_id`、`release_id`、`version`、`previous_version`、`state`、`error`、`created_at`、`updated_at`、`expires_at`。建议每 3–5 秒轮询；重新进入页面通过 `latest_job` 恢复进度。
 
 云端更新权限仅属于管理员或部署时指定的身份；NAS 会话默认只允许更新当前插件。401 表示中继会话失效，不应清空 NAS 登录凭据。409 `update_in_progress` 应恢复现有任务，409 `release_changed` 应重新检查发行信息。未配置发行目录或旧端点不支持更新时，应明确显示不可用。
+
+## 更新响应字段与线上核对样本
+
+更新协议为 `schema_version:1`，独立于 `endpoint_contract:2`。两组件必须独立加载和重试；HTTP 200 的更新状态不是连接配置保存结果。如下是升级前实际 HTTPS 响应的脱敏样本（2026-10-17，旧 API 与统一 /api 均为 200）；版本和发行信息是采样快照，不能硬编码：
+
+server：
+
+```json
+{
+  "can_update": true,
+  "check_error": "",
+  "checked_at": 1792233365,
+  "component": "server",
+  "current_version": "0.7.0",
+  "executor_online": true,
+  "latest": {
+    "notes": "统一 HTTPS 入口及同源 /api，兼容旧 API 和应用域名，支持主域或子域部署。",
+    "release_id": "server-0.7.0",
+    "requires_restart": true,
+    "size": 82692699,
+    "version": "0.7.0"
+  },
+  "latest_job": {
+    "component": "server",
+    "created_at": 1792077971,
+    "device_id": "",
+    "error": "",
+    "expires_at": 1792079771,
+    "id": "upd_example_server",
+    "previous_version": "0.4.0",
+    "release_id": "server-0.4.1",
+    "state": "succeeded",
+    "updated_at": 1792077983,
+    "version": "0.4.1"
+  },
+  "schema_version": 1,
+  "update_available": false
+}
+```
+
+plugin：
+
+```json
+{
+  "can_update": true,
+  "check_error": "",
+  "checked_at": 1792233366,
+  "component": "plugin",
+  "current_version": "0.7.1",
+  "device_id": "dev_example",
+  "executor_online": true,
+  "latest": {
+    "notes": "通用配置示例及明确的插件文件清单，保留统一入口和现有设备配置。",
+    "release_id": "plugin-0.7.1",
+    "requires_restart": true,
+    "size": 2145,
+    "version": "0.7.1"
+  },
+  "latest_job": {
+    "component": "plugin",
+    "created_at": 1792226765,
+    "device_id": "dev_example",
+    "error": "",
+    "expires_at": 1792228565,
+    "id": "upd_example_plugin",
+    "previous_version": "0.7.0",
+    "release_id": "plugin-0.7.1",
+    "state": "succeeded",
+    "updated_at": 1792226833,
+    "version": "0.7.1"
+  },
+  "schema_version": 1,
+  "update_available": false
+}
+```
+
+| 字段 | 类型与含义 |
+|---|---|
+| `schema_version` | integer，当前为 1 |
+| `component` | `server` 或 `plugin` |
+| `device_id` | 插件检查为 string；服务端检查不带此字段；服务端 job 内是空字符串 `""`（客户端可兼容 null 并规范化）；插件 job 必须是实际 NAS 的非空 device_id |
+| `current_version` | string；旧插件不报告版本时可为空字符串，应显示未知 |
+| `latest` | object 或 null；`size` 为整数 byte，插件为清单大小，服务端为更新归档大小 |
+| `update_available` | boolean；仅在版本已知、发行检查成功且最新版本更高时为 true |
+| `can_update` | boolean，调用者权限 |
+| `executor_online` | boolean，执行器心跳在线，不等于上游 Docker WebUI 可达 |
+| `check_error` | string，成功为 `""`；未配置为 `updates_not_configured`，不得把非空值视为已是最新 |
+| `checked_at` | integer，Unix 秒；不是 ISO 字符串或毫秒 |
+| `latest_job` | object 或 null；不是数组，不保证其版本与当前安装版本相同 |
+
+`latest` 的 `release_id/version/notes` 都是 string，`requires_restart` 是 boolean。job 的 `error` 成功时为空字符串，三个 `*_at` 均为 Unix 秒。HTTP 非 2xx 用 `{"error":"code"}` 错误对象，不按成功 schema 解析。未配置、无权限、执行器离线是分别可表示的正常检查结果；服务端检查不可用不能阻止插件检查。
 
 ## NAS 地址信息
 

@@ -32,7 +32,7 @@ func run() error {
 		return nil
 	}
 	if os.Args[1] == "capabilities" {
-		fmt.Println(`{"endpoint_contracts":[1,2],"unified_entry":true}`)
+		fmt.Println(`{"endpoint_contracts":[1,2],"unified_entry":true,"docker_auto_publish":1,"browser_public_direct":1,"launch_navigation":1,"updates":1,"webdav":false}`)
 		return nil
 	}
 	fs := flag.NewFlagSet(os.Args[1], flag.ContinueOnError)

@@ -31,7 +31,7 @@ func validConnectHost(host string) bool {
 	return true
 }
 func (s *Server) connectInfo(d store.Device, requests ...*http.Request) core.ConnectInfo {
-	i := core.ConnectInfo{ID: d.ConnectID, Enabled: d.ConnectEnabled, Online: !d.Revoked && time.Now().Unix()-d.LastSeen < 45}
+	i := core.ConnectInfo{BrowserPublicDirect: d.BrowserPublicDirect, WebAccess: webAccessInfo(d), ID: d.ConnectID, Enabled: d.ConnectEnabled, Online: !d.Revoked && time.Now().Unix()-d.LastSeen < 45}
 	domain := s.browserDomain(requests...)
 	if d.ConnectID != "" && domain != "" {
 		i.EntryURL = "https://" + domain + "/" + d.ConnectID
@@ -47,7 +47,7 @@ func (s *Server) connectDevice(id string) (store.Device, bool) {
 	}
 	return store.Device{}, false
 }
-func (s *Server) setConnect(device, id string, enabled bool) (core.ConnectInfo, string) {
+func (s *Server) setConnect(device, id string, enabled bool, publicDirect ...*bool) (core.ConnectInfo, string) {
 	id = core.NormalizeConnectID(id)
 	if !core.ValidConnectID(id) && (id != "" || enabled) {
 		return core.ConnectInfo{}, "invalid_connect_id"
@@ -73,7 +73,33 @@ func (s *Server) setConnect(device, id string, enabled bool) (core.ConnectInfo, 
 				return errors.New(code)
 			}
 		}
+		d.ConnectConfigured = true
 		d.ConnectID, d.ConnectEnabled = id, enabled
+		if len(publicDirect) > 0 && publicDirect[0] != nil {
+			d.BrowserPublicDirect = *publicDirect[0]
+			if !d.BrowserPublicDirect {
+				for key, session := range st.Sessions {
+					if svc := st.Services[session.ServiceID]; svc.DeviceID == device && !s.serviceHost(svc, session.Host) {
+						delete(st.Sessions, key)
+					} else if svc.DeviceID == device {
+						session.PublicOrigin = ""
+						session.NavigationExpires = 0
+						st.Sessions[key] = session
+					}
+				}
+				for key, ticket := range st.Tickets {
+					if svc := st.Services[ticket.ServiceID]; svc.DeviceID == device && (ticket.SourceOrigin != "" || ticket.PublicOrigin != "") {
+						delete(st.Tickets, key)
+					}
+				}
+			}
+		}
+		for key, svc := range st.Services {
+			if svc.DeviceID == device && svc.DockerManaged {
+				svc.Published = enabled
+				st.Services[key] = svc
+			}
+		}
 		st.Devices[device] = d
 		if err := s.checkHostCollisions(*st); err != nil {
 			code = "connect_id_taken"
@@ -133,14 +159,15 @@ func (s *Server) connectUserRoute(w http.ResponseWriter, r *http.Request, p stor
 		return true
 	}
 	var in struct {
-		ID      string `json:"id"`
-		Enabled *bool  `json:"enabled"`
+		BrowserPublicDirect *bool  `json:"browser_public_direct"`
+		ID                  string `json:"id"`
+		Enabled             *bool  `json:"enabled"`
 	}
 	if body(r, &in) != nil || in.Enabled == nil {
 		reject(w, 400, "invalid_request")
 		return true
 	}
-	_, code := s.setConnect(id, in.ID, *in.Enabled)
+	_, code := s.setConnect(id, in.ID, *in.Enabled, in.BrowserPublicDirect)
 	if code != "" {
 		connectError(w, code)
 	} else {
@@ -291,6 +318,9 @@ func (s *Server) connectHostRoute(w http.ResponseWriter, r *http.Request) bool {
 		reject(w, 404, "connect_not_found")
 		return true
 	}
+	if relayEscape(w, r) {
+		return true
+	}
 	if strings.HasPrefix(r.URL.Path, "/_mf/") {
 		reject(w, 404, "not_found")
 		return true
@@ -308,6 +338,13 @@ func (s *Server) connectHostRoute(w http.ResponseWriter, r *http.Request) bool {
 	if d.PortalPort == 0 || d.GatewayPin == "" {
 		reject(w, 503, "nas_unavailable")
 		return true
+	}
+	if documentNavigation(r) && !relayPinned(r) && publicEnabled(d) {
+		host := core.PublicHost(d.PublicIngress, core.PublicPortalLabel(d.ID))
+		if s.verifyPublic(r.Context(), d, host) {
+			writeRoutePage(w, r, d, host, "", "")
+			return true
+		}
 	}
 	s.portalProxy(w, r, d)
 	return true

@@ -64,13 +64,13 @@ func (s *Server) dockerInventory(st store.State, d store.Device, requests ...*ht
 				entry["service_id"] = svc.ID
 				entry["origin"] = s.origin(svc, requests...)
 				entry["published"] = svc.Published
-				entry["relay_enabled"] = fresh && store.DockerAvailable(d, svc) && svc.Published && (d.ConnectID == "" || d.ConnectEnabled)
+				entry["relay_enabled"] = fresh && store.DockerAvailable(d, svc) && svc.Published && store.RemoteEnabled(d)
 			}
 			apps = append(apps, entry)
 		}
 	}
 	sort.Slice(apps, func(i, j int) bool { return apps[i]["application_id"].(string) < apps[j]["application_id"].(string) })
-	return map[string]any{"schema_version": 1, "device_id": d.ID, "state": state, "online": online, "fresh": fresh, "scanned_at": scanned, "applications": apps}
+	return map[string]any{"schema_version": 1, "publication_mode": "automatic", "device_id": d.ID, "state": state, "online": online, "fresh": fresh, "scanned_at": scanned, "applications": apps}
 }
 
 func (s *Server) dockerRoute(w http.ResponseWriter, r *http.Request, p store.Principal) bool {

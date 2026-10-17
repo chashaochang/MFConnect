@@ -198,7 +198,7 @@ def test(host, version, mode):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--version',default='0.7.2')
+    parser.add_argument('--version',default='0.8.0')
     parser.add_argument('--runtime',choices=('all','docker','compose','readme'),default='all')
     args = parser.parse_args()
     for mode in (('docker','compose','readme') if args.runtime == 'all' else (args.runtime,)):

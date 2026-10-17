@@ -39,6 +39,8 @@ func gatewayCertificate(c Config) (tls.Certificate, string, error) {
 type deviceGateway struct {
 	configPath   string
 	server       *http.Server
+	publicServer *http.Server
+	publicDone   chan struct{}
 	done         chan struct{}
 	mu           sync.Mutex
 	connections  map[net.Conn]struct{}
@@ -59,6 +61,7 @@ func startGateway(configPath string, c Config) (*deviceGateway, error) {
 	g := &deviceGateway{configPath: configPath, done: make(chan struct{}), connections: map[net.Conn]struct{}{}}
 	g.server = &http.Server{Handler: g, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 64 << 10, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{certificate}}}
 	go func() { _ = g.server.Serve(tls.NewListener(l, g.server.TLSConfig)); close(g.done) }()
+	g.startPublic(c)
 	return g, nil
 }
 
@@ -67,6 +70,10 @@ func (g *deviceGateway) Close() {
 		return
 	}
 	_ = g.server.Close()
+	if g.publicServer != nil {
+		_ = g.publicServer.Close()
+		<-g.publicDone
+	}
 	g.mu.Lock()
 	for c := range g.connections {
 		_ = c.Close()
@@ -75,11 +82,15 @@ func (g *deviceGateway) Close() {
 	<-g.done
 }
 
-func authorize(ctx context.Context, c Config, host, token string) (core.AccessResponse, error) {
+func authorize(ctx context.Context, c Config, host, token string, credentialHash ...string) (core.AccessResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	var out core.AccessResponse
-	err := request(ctx, c, "/v1/device/access", core.AccessRequest{Host: host, Session: token}, &out, true)
+	input := core.AccessRequest{Host: host, Session: token}
+	if len(credentialHash) > 0 {
+		input.CredentialHash = credentialHash[0]
+	}
+	err := request(ctx, c, "/v1/device/access", input, &out, true)
 	if err != nil {
 		return out, err
 	}
@@ -99,9 +110,12 @@ func authorize(ctx context.Context, c Config, host, token string) (core.AccessRe
 }
 
 func (g *deviceGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	g.serveApplication(w, r, false)
+}
+func (g *deviceGateway) serveApplication(w http.ResponseWriter, r *http.Request, public bool) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	if r.Header.Get(core.PortalProofHeader) != "" {
+	if !public && r.Header.Get(core.PortalProofHeader) != "" {
 		g.servePortal(w, r)
 		return
 	}
@@ -115,8 +129,12 @@ func (g *deviceGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if site := r.Header.Get("Sec-Fetch-Site"); site == "cross-site" || site == "same-site" {
-		http.Error(w, "cross_origin_request", 403)
-		return
+		// A ticket handoff ends in a top-level GET navigation. No cross-origin
+		// subresource, fetch, unsafe method, or WebSocket is permitted.
+		if !public || r.Method != "GET" || r.Header.Get("Sec-Fetch-Mode") != "navigate" || r.Header.Get("Sec-Fetch-Dest") != "document" {
+			http.Error(w, "cross_origin_request", 403)
+			return
+		}
 	}
 	cookie, err := r.Cookie(webproxy.SessionCookie)
 	if err != nil || len(cookie.Value) < 32 || len(cookie.Value) > 256 {
@@ -128,7 +146,11 @@ func (g *deviceGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "service_unavailable", 503)
 		return
 	}
-	grant, err := authorize(r.Context(), c, host, cookie.Value)
+	credentialHash := ""
+	if public {
+		credentialHash = bearerHash(r)
+	}
+	grant, err := authorize(r.Context(), c, host, cookie.Value, credentialHash)
 	if err != nil {
 		var he HTTPError
 		if errors.Is(err, errLocalAccess) || (errors.As(err, &he) && (he.Status == 401 || he.Status == 403)) {
@@ -137,6 +159,9 @@ func (g *deviceGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "authorization_unavailable", 503)
 		}
 		return
+	}
+	if grant.StripAuthorization {
+		r.Header.Del("Authorization")
 	}
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -170,7 +195,7 @@ func (g *deviceGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				var next core.AccessResponse
 				checkCtx, finish := context.WithTimeout(ctx, 3*time.Second)
 				if e == nil && current.DeviceID == c.DeviceID && current.Transport == c.Transport && current.GatewayPort == c.GatewayPort {
-					next, e = authorize(checkCtx, current, host, cookie.Value)
+					next, e = authorize(checkCtx, current, host, cookie.Value, credentialHash)
 				} else {
 					e = errors.New("device configuration changed")
 				}

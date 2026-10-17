@@ -63,5 +63,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          printf '%s\n' '支持普通 Docker 和 Docker Compose，使用 GHCR 公开镜像；提供交互配置向导和离线镜像包。默认使用已有证书，无云账号要求；可选 DNS 自动签证。云端、网关、证书管理和插件均在容器内，宿主机无需安装其他服务。' > /tmp/release-notes.txt
+          printf '%s\n' 'Docker WebUI 自动发现和远程接入，支持经验证的公网网页直连及中继回退；统一入口契约 2，兼容旧入口。支持普通 Docker、Docker Compose 和可更新 Unraid 插件。详见 docs/api.md 与 docs/deployment.md。' > /tmp/release-notes.txt
           gh release create "$GITHUB_REF_NAME" --verify-tag --title "MF Connect $GITHUB_REF_NAME" --notes-file /tmp/release-notes.txt dist/release/mfconnect-*.tar.gz dist/release/SHA256SUMS dist/release/bundle.json

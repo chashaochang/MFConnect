@@ -82,7 +82,7 @@ func (s *Server) endpointInfo(r *http.Request) map[string]any {
 		"api_origin": u.Scheme + "://" + u.Host, "api_base_url": base,
 		"entry_origin": entry, "canonical_api_base_url": s.Config.APIBaseURL(),
 		"browser_domain": s.browserDomain(r), "apps_domain": s.appsDomain(r),
-		"capabilities": map[string]any{"unified_entry": s.Config.EntryOrigin != "", "api_base_url": 1, "docker_discovery": 1, "self_install": 1, "legacy_api": legacy, "app_host_layout": "flat", "host_bound_sessions": true},
+		"capabilities": map[string]any{"unified_entry": s.Config.EntryOrigin != "", "api_base_url": 1, "docker_discovery": 1, "docker_auto_publish": 1, "browser_public_direct": 1, "launch_navigation": 1, "updates": 1, "webdav": false, "self_install": 1, "legacy_api": legacy, "app_host_layout": "flat", "host_bound_sessions": true},
 	}
 }
 func (s *Server) serviceHost(svc store.Service, host string) bool {

@@ -27,11 +27,20 @@ func ValidConnectID(id string) bool {
 }
 
 type ConnectInfo struct {
-	ID       string `json:"id"`
-	Enabled  bool   `json:"enabled"`
-	EntryURL string `json:"entry_url"`
-	Origin   string `json:"origin"`
-	Online   bool   `json:"online"`
+	BrowserPublicDirect bool          `json:"browser_public_direct"`
+	WebAccess           WebAccessInfo `json:"web_access"`
+	ID                  string        `json:"id"`
+	Enabled             bool          `json:"enabled"`
+	EntryURL            string        `json:"entry_url"`
+	Origin              string        `json:"origin"`
+	Online              bool          `json:"online"`
+}
+
+type WebAccessInfo struct {
+	Schema                  int    `json:"schema_version"`
+	Mode                    string `json:"mode"`
+	PublicIngressConfigured bool   `json:"public_ingress_configured"`
+	Status                  string `json:"status"`
 }
 type PortalAssignment struct {
 	ConnectInfo
