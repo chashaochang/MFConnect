@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -143,6 +144,34 @@ def verify_assets(assets, output, download):
     return missing
 
 
+def verify_public_installation(output, version, work):
+    """Install the public manifest twice into an empty temporary filesystem."""
+    url = 'https://github.com/' + REPOSITORY + '/releases/download/v' + version + '/mfconnect.plg'
+    manifest = subprocess.check_output(['curl', '-fsSL', '--proto', '=https', '--proto-redir', '=https',
+                                       '--connect-timeout', '15', '--max-time', '60', '--retry', '2', url])
+    if manifest != (output / 'mfconnect.plg').read_bytes():
+        raise ValueError('Public plugin manifest differs from the verified release')
+    inline = ET.fromstring(manifest).find('./FILE/INLINE').text
+    if 'MFCONNECT_TEST_ROOT' not in inline:
+        raise ValueError('Plugin installer does not support isolated verification')
+    filesystem = work / 'installation-test'
+    filesystem.mkdir()
+    env = dict(os.environ, MFCONNECT_TEST_ROOT=str(filesystem.resolve()))
+    for label in ('fresh install from GitHub', 'reinstall from verified cache'):
+        result = subprocess.run(['bash', '-c', inline], env=env, capture_output=True, text=True, timeout=240)
+        if result.returncode:
+            raise RuntimeError('Plugin ' + label + ' failed:\n' + result.stdout + result.stderr)
+        current = filesystem / 'usr/local/lib/mfconnect/current'
+        if (current / 'VERSION').read_text().strip() != version:
+            raise ValueError('Unexpected installed plugin version')
+        binary_version = subprocess.check_output([str(current / 'mfconnectd'), 'version'], text=True).strip()
+        if binary_version != version or not (filesystem / 'usr/local/emhttp/plugins/mfconnect/Connect.php').is_file():
+            raise ValueError('Installed plugin binary or settings page is invalid')
+        if (filesystem / 'boot/config/plugins/mfconnect/config.json').exists():
+            raise ValueError('Empty installation unexpectedly created NAS configuration')
+        print('Verified public plugin ' + label, flush=True)
+
+
 def sync_release(tag=None):
     """Fill missing plugin assets from the original, already published image."""
     selector = ['tags', tag] if tag else ['latest']
@@ -193,6 +222,7 @@ def sync_release(tag=None):
         if updated != release['body']:
             gh('release', 'edit', tag, '--repo', REPOSITORY,
                '--title', 'MF Connect ' + tag + ' · 服务器 / Unraid 插件', '--notes-file', str(notes))
+        verify_public_installation(output, version, work)
         print('Verified standalone plugin assets and installation instructions for ' + tag)
 
 
