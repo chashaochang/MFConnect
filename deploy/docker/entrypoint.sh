@@ -95,6 +95,12 @@ validate_config() {
 }
 
 case "${1:-serve}" in
+    bootstrap)
+        # Named-volume state is initialized once. Partial state is rejected by
+        # init; a restart never resets device identities or existing bindings.
+        if [ ! -e "$config" ]; then "$0" init; fi
+        exec "$0" serve
+        ;;
     version) exec "$server" version ;;
     init)
         [ "$#" -eq 1 ] || fail 'init takes its settings from the environment, without extra arguments.'
@@ -126,6 +132,9 @@ case "${1:-serve}" in
         validate_environment
         validate_config
         validate_certificate
+        if [ "${MF_WATCH_TLS:-0}" = 1 ]; then
+            exec /usr/local/bin/mfconnect-watch-tls
+        fi
         exec "$server" serve --dir "$state"
         ;;
     issue-user)
@@ -134,5 +143,5 @@ case "${1:-serve}" in
         validate_config
         exec "$server" issue-user --dir "$state" "$@"
         ;;
-    *) fail 'Supported commands: init, serve, issue-user, version' ;;
+    *) fail 'Supported commands: bootstrap, init, serve, issue-user, version' ;;
 esac

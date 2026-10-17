@@ -17,7 +17,7 @@ DOCUMENTS = {'docs/api.md', 'docs/deployment.md', 'docs/development.md'}
 SOURCE_SUFFIXES = {
     'cmd': {'.go'}, 'internal': {'.go'},
     'plugin': {'.php', '.page', '.css', '.js', '.sh'},
-    'deploy': {'.sh', '.py', '.json', '.service', '.timer'},
+    'deploy': {'.sh', '.py', '.json', '.service', '.timer', '.yaml'},
     'scripts': {'.py', '.sh', '.php'},
 }
 SECRETS = (
@@ -28,7 +28,7 @@ SECRETS = (
 
 
 def allowed_path(name):
-    if name in TOP_LEVEL or name in DOCUMENTS or name in ('plugin/rc.mfconnect', '.github/workflows/release.yml'):
+    if name in TOP_LEVEL or name in DOCUMENTS or name in ('plugin/rc.mfconnect', '.github/workflows/release.yml', 'deploy/compose/env.example', 'deploy/gateway/Dockerfile'):
         return True
     path = PurePosixPath(name)
     return (len(path.parts) > 1

@@ -1,90 +1,109 @@
-# 部署
+# 部署与维护
 
-文中的 `example.com`、`203.0.113.10` 均为示例，部署时使用自己的配置。实际配置、凭据和备份存放在服务器私有目录。
+普通 App / NAS 使用者只需填写已有中继的 HTTPS 入口。以下服务器操作由中继部署者完成；不要求腾讯云账号，也不限定服务器供应商。
 
-## 一键安装（新服务器）
+## Docker Compose 快速开始
 
-### 准备
+按 [README 的命令](../README.md#docker-部署中继) 下载部署包并加载镜像，编辑 `.env`，然后启动 `docker compose up -d`。
 
-| 需要的东西 | 要求 |
-| --- | --- |
-| 云服务器 | Linux amd64，systemd；Ubuntu 22.04/24.04、Debian 12/13、OpenCloudOS 9 或 RHEL 9 系列 |
-| 域名 | DNS 在腾讯云 DNSPod 托管，可使用主域名或任意层级的子域名 |
-| 云安全组 | 放行入站 TCP 80、443、17000；服务器能访问 GitHub、软件源、DNSPod 和 Let's Encrypt |
-| DNS 凭据 | 腾讯云 API SecretId / SecretKey，具备目标域名的 DNS 记录查询、创建和删除权限 |
+部署包包含两个预编译镜像：`mfconnect-server:0.7.2-docker.1` 和 `mfconnect-gateway:0.7.2`。网关内提供 Nginx、证书管理和插件 0.7.2；连接程序为 0.7.2，FRP 为 0.71.1。宿主机只运行 Docker / Compose，不安装 Nginx、Python、Go 或 systemd 续期单元，不挂载 Docker socket。
 
-DNS 凭据可在腾讯云控制台的 **访问管理 → 访问密钥 → API 密钥管理** 获取。使用专用子用户并授权目标域名的 DNSPod 权限即可；不需要服务器管理权限。证书签发和续期需要添加、删除 `_acme-challenge` TXT 记录，不能只授予只读权限。这里使用腾讯云 API 密钥，不是旧版 DNSPod ID/Token。
+### 配置域名
 
-### 复制执行
+将入口及其一层通配子域解析到服务器公网 IP：
 
-通过 SSH 登录服务器，在 root 终端执行：
+| 服务入口 D | 在 `example.com` 下的 A 记录名 | 证书必须覆盖 |
+| --- | --- | --- |
+| `example.com` | `@`、`*` | `example.com`、`*.example.com` |
+| `connect.example.com` | `connect`、`*.connect` | `connect.example.com`、`*.connect.example.com` |
+
+填写实际 DNS zone 下对应的记录名。通配符证书不覆盖入口本身，也不覆盖两层子域。NAS 与应用均采用 D 下的一层子域，无需逐应用购买或申请证书。
+
+服务器防火墙和云安全组放行 TCP 80、443、17000；脚本不会修改它们。证书模式为自动申请时，网关还需能访问证书机构和所选 DNS API。
+
+### 使用已有证书（默认）
+
+`.env` 中配置：
+
+```dotenv
+MF_ENTRY_ORIGIN=https://connect.example.com
+MF_TLS_MODE=provided
+```
+
+将完整证书链放入 `config/fullchain.pem`，对应未加密私钥放入 `config/privkey.pem`。证书应由系统信任的机构签发，并同时覆盖入口与通配域名。
+
+```bash
+chmod 600 config/privkey.pem
+docker compose up -d
+```
+
+此模式**不读取任何云服务商凭据**。证书的申请和续期可由你已有的证书工具完成；替换这两个文件后，网关会校验并自动加载。更换文件内容即可，不要单独替换整个 `config` 挂载目录。
+
+### 自动申请和续期（可选）
+
+如果希望由网关申请通配符证书，在 `.env` 中设置：
+
+```dotenv
+MF_TLS_MODE=acme
+MF_DNS_PROVIDER=cloudflare
+```
+
+`MF_DNS_PROVIDER` 选择**域名实际使用的 DNS 服务商**，与服务器在哪里买没有关系。将对应凭据保存在 `config/dns.env`，每行 `字段=值`，不加引号：
+
+| DNS 服务商 | 配置值 | `config/dns.env` 字段 |
+| --- | --- | --- |
+| Cloudflare | `cloudflare` | `CF_Token`，可选 `CF_Zone_ID` / `CF_Account_ID` |
+| 阿里云 DNS | `alidns` | `Ali_Key`、`Ali_Secret` |
+| 腾讯云 DNSPod | `dnspod` | `Tencent_SecretId`、`Tencent_SecretKey` |
+
+凭据需有目标域名 DNS 查询及 TXT 记录新增、删除权限；不需要服务器管理权限。Cloudflare 可使用限定目标 zone 的 API Token；腾讯云这里使用云 API 密钥，不是旧版 DNSPod ID/Token。
+
+```bash
+chmod 600 config/dns.env
+docker compose up -d
+```
+
+入口的 A 记录由部署者预先配置。网关通过 DNS-01 自动添加/清理验证 TXT 记录并申请入口及通配证书，随后每 12 小时检查续期。凭据只挂载给网关，不传给云端业务容器、NAS 插件或手机，也不发送给 MF Connect 项目维护者。其他 DNS 服务商可以使用已有证书模式。
+
+网关使用固定版本 acme.sh，完整源码及 GPL 许可证位于网关镜像的 `/opt/acme/`。证书和私钥经校验后成对切换；证书变化时 API / FRP 在自身容器内重载，现有中继连接会短暂重连。无证书变化时不重启。校验失败保留原证书。
+
+### 可选配置向导
+
+在空目录运行：
 
 ```bash
 curl -fL --proto '=https' --proto-redir '=https' --retry 3 \
-  https://raw.githubusercontent.com/chashaochang/MFConnect/v0.7.1/install.sh \
-  -o mfconnect-install.sh && bash mfconnect-install.sh
+  https://raw.githubusercontent.com/chashaochang/MFConnect/v0.7.2/install.sh \
+  -o mfconnect-install.sh
+sh mfconnect-install.sh
 ```
 
-如果当前是普通用户，最后的 `bash mfconnect-install.sh` 改为 `sudo bash mfconnect-install.sh`。如果提示没有 curl，Ubuntu/Debian 执行 `apt-get update && apt-get install -y curl ca-certificates`，RHEL/OpenCloudOS 执行 `dnf install -y curl ca-certificates`，然后重新执行上面的命令。
+向导检查现有 Docker / Compose、下载并校验部署包、加载镜像，然后在临时容器里生成 `.env`。默认选择已有证书；选自动申请时才询问你的 DNS 服务商和对应凭据。不会安装或替换宿主机软件，也不会覆盖已有配置。完成域名解析、证书准备后，在生成的 `mfconnect` 目录执行 `docker compose up -d`。
 
-依次填写入口域名、托管域名、公网 IPv4、SecretId 和 SecretKey。例如入口用 `connect.example.com`，托管域名填 DNSPod 列表中的 `example.com`。凭据隐藏输入，不显示在命令参数里；不需要安装 TCCLI。
+## 状态、故障与维护
 
-安装脚本会：
-
-1. 下载 GitHub Release 的部署包，验证 SHA-256；无需 Go 或本机编译。
-2. 安装缺少的 Docker、Compose V2 和 Nginx；已有 Docker 不会被替换。
-3. 创建入口和通配子域的 DNS A 记录，申请两者共同使用的 HTTPS 证书。
-4. 加载镜像、初始化私有数据卷、启动服务、接入 Nginx，并验证 HTTPS 健康检查。
-5. 发布插件下载文件、设置每日续期检查，显示插件安装链接。
-
-下载包包含云端 0.7.0、插件 0.7.1、FRP 0.71.1，以及固定版本的 acme.sh 源码。部署包版本为 0.7.1，各组件不要求版本号相同。acme.sh 的源码和许可证保留在包内 `third_party/acme.sh/`。
-
-### 完成安装
-
-将脚本输出的 `.plg` 链接粘贴到 **Unraid → Plugins → Install Plugin**。例如入口为 `https://example.com`，链接就是：
-
-```text
-https://example.com/downloads/mfconnect/mfconnect.plg
-```
-
-打开 **Settings → MF Connect** 或 RaidMate 的 MF Connect 设置，填写同一个 HTTPS 入口，再设置连接 ID。无需单独填写 API 域名、购买每应用证书或创建云端账号。
-
-Docker WebUI 默认发现但不自动发布。独立 IP 网络中的应用必须允许 Unraid 主机访问；插件不会替用户更改 Docker 网络设置。
-
-### 中途失败或已有站点
-
-排查失败原因后，在保存安装脚本的目录执行：
+在部署目录执行：
 
 ```bash
-bash mfconnect-install.sh --resume
-```
-
-恢复安装只识别该安装器创建的状态和相同发行包，不重新初始化数据。已经完成的安装只显示地址；**这个命令不是版本升级命令**。
-
-| 提示或现象 | 处理 |
-| --- | --- |
-| DNS 记录冲突 | 检查入口和通配记录是否仍指向旧服务；脚本不会擅自覆盖 A / AAAA / CNAME / NS |
-| 证书申请失败 | 检查 DNSPod 权限、托管 zone 和网络；修正后 `--resume` |
-| 已有 Nginx 站点冲突 | 选择未占用的域名范围，或按下方高级说明手工合入路由 |
-| 已有 Docker 缺少 Compose V2 | 补装 Compose V2；安装器不替换已有 Docker |
-| 80/443 被其他服务占用 | 自动接入支持系统 Nginx 和宝塔 Nginx；其他反向代理需手工接入 |
-| 本机健康但外网打不开 | 检查云安全组 TCP 443/17000、DNS 是否已生效；云安全组不会由脚本修改 |
-| `/srv/mfconnect` 或数据卷已经存在 | 不删除数据，不用新安装覆盖；按维护或迁移流程操作 |
-
-启用 firewalld / UFW 的主机会添加所需端口规则。SELinux 保持开启，脚本设置 Nginx 代理所需网络权限及公开文件/证书的文件标签。已有 Nginx 配置先校验再加载，失败时还原站点文件。
-
-### 查看状态与维护
-
-```bash
-cd /srv/mfconnect/current
 docker compose ps
-docker compose logs --tail=100 mfconnect
-systemctl status mfconnect-tls.timer
+docker compose logs --tail=100 gateway mfconnect
+docker compose restart
 ```
 
-程序与 Compose 文件位于 `/srv/mfconnect/current`，私有输入及 DNS 凭据位于 `/srv/mfconnect/secrets`（仅 root 可读）。公开下载只包含 `/srv/mfconnect/public/downloads/mfconnect` 内的插件文件。数据卷是 `mfconnect_data`；保留绑定和连接 ID 时不要删除它。
+| 现象 | 检查 |
+| --- | --- |
+| 缺少或不接受证书 | `config` 中文件名、私钥匹配、完整链，以及入口和 `*.入口` 两项覆盖 |
+| 自动申请失败 | 所选 DNS 服务商、凭据权限、DNS 传播及出站网络；修复后 `docker compose restart gateway` |
+| 80 / 443 已占用 | 关闭重复入口，或在 `.env` 修改 `MF_HTTP_BIND` / `MF_HTTPS_BIND` 接入自己的前置代理 |
+| Docker 网络地址冲突 | 同时修改 `.env` 的 `MF_NETWORK_SUBNET` 和其中的 `MF_GATEWAY_IP` |
+| 容器正常但外网打不开 | 入口与通配解析、主机防火墙、云安全组及端口映射 |
+| Existing entry differs | 配置与已有数据不符；恢复原入口或执行明确迁移，不删除数据重新安装 |
 
-安装器自动配置证书续期；**App 内自动更新频道需要另外配置**，见下方“更新、续期和备份”。没有发行频道时，不能把“未配置更新”当作“已是最新版本”。
+Compose 管理业务数据、网关状态、证书和更新目录四个命名卷。配置在部署目录的 `.env` 与 `config/`。**保留绑定和连接 ID 时不要执行 `docker compose down -v`。** 备份配置、密钥和一致性的业务数据库，备份不放入公开下载目录。
+
+安装插件使用 `https://入口/downloads/mfconnect/mfconnect.plg`。插件设置位于 **Settings → MF Connect**；App 可以请求一次性安装链接。Docker WebUI 默认自动发现，由用户选择是否发布；独立 IP 容器需允许 Unraid 主机访问。
+
+首次启动不要求填写软件更新签名频道。App 更新接口继续提供，但“未配置更新频道”不等于“已是最新”。容器部署的发行升级应加载新镜像并更新 `.env` 对应标签后执行 `docker compose up -d`；已有宿主机更新执行器的配置和迁移说明见下方。
 
 ## 高级部署：自行构建、其他 DNS 或已有代理
 
@@ -172,7 +191,7 @@ Docker WebUI 默认发现但不自动发布。独立 IP 网络中的应用必须
 
 云端更新由宿主机执行器完成，业务容器不挂载 Docker socket。`deploy/docker/install-updater.sh` 使用 `/srv/mfconnect` 布局；使用其他布局时应调整单元和执行器配置。`MF_UPDATE_OWNER` 或 `MF_UPDATE_DEVICE` 指定可更新云端的身份，其他 NAS 不因此获得权限。
 
-一键安装已经配置 `mfconnect-tls.timer`。手工部署使用 `deploy/unified/mfconnect-tls.service` 和 `.timer`，按服务器实际路径调整后启用。证书变更会重启 Go/FRP 容器并重新加载 Nginx，现有中继连接会短暂中断；未到续期时间不重启。不要同时运行另一套任务修改同一证书。
+完整 Compose 部署由网关容器处理证书检查和加载。保留宿主机 Nginx 的手工部署可使用 `deploy/unified/mfconnect-tls.service` 和 `.timer`，按服务器实际路径调整后启用。证书变更会重启 Go/FRP 容器并重新加载 Nginx，现有中继连接会短暂中断；未到续期时间不重启。不要同时运行另一套任务修改同一证书。
 
 备份包含私有配置、证书、插件身份和一致性的数据库副本。停止写入后复制 SQLite，或使用其备份机制。备份、操作日志和实际验证结果均不放入公开下载目录。
 

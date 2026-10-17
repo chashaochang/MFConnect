@@ -1,65 +1,33 @@
-#!/bin/bash
-# Download a versioned deployment bundle, verify it, then start the local wizard.
-set -euo pipefail
+#!/bin/sh
+# Optional downloader/configuration wizard. The runtime is Docker Compose only.
+set -eu
 umask 077
 if [ "${1:-}" = --help ]; then
-  cat <<'HELP'
-MF Connect cloud installer
-Usage: sudo bash install.sh [--plan | --resume | --config /root/mfconnect-install.json]
-Interactive installation asks for the entry domain, DNS zone, public IPv4 and
-Tencent DNS credentials. Existing MF Connect deployments are never overwritten.
-HELP
-  exit 0
+    echo 'Run from an empty directory: sh install.sh'
+    echo 'Requires Docker Compose V2, curl, tar and sha256sum. Installs no host services.'
+    exit 0
 fi
-[ "$(id -u)" = 0 ] || { echo '请使用 sudo bash install.sh 运行。' >&2; exit 1; }
-[ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] || { echo '当前安装包支持 Linux amd64。' >&2; exit 1; }
-if ! command -v curl >/dev/null || ! command -v python3 >/dev/null; then
-  if command -v apt-get >/dev/null; then
-    apt-get update
-    apt-get install -y curl ca-certificates python3
-  elif command -v dnf >/dev/null; then
-    dnf install -y curl ca-certificates python3
-  else
-    echo '请先安装 curl、CA 证书和 Python 3。' >&2
-    exit 1
-  fi
-fi
-python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else "需要 Python 3.9 或更新版本。")'
-version=0.7.1
+docker compose version >/dev/null
+docker info >/dev/null
+for command in curl tar sha256sum; do command -v "$command" >/dev/null; done
+[ ! -e mfconnect ] || { echo 'mfconnect directory already exists; use its Compose configuration.' >&2; exit 1; }
+version=0.7.2
 base="https://github.com/chashaochang/MFConnect/releases/download/v${version}"
-archive="mfconnect-${version}-linux-amd64-deploy.tar.gz"
-work=$(mktemp -d /tmp/mfconnect-install.XXXXXX)
+name="mfconnect-${version}-docker-amd64.tar.gz"
+work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
-fetch() { curl --fail --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 --connect-timeout 15 --max-time 900 "$1" -o "$2"; }
-echo "下载 MF Connect ${version} 部署包……"
+fetch() { curl -fL --proto '=https' --proto-redir '=https' --retry 3 --connect-timeout 15 --max-time 900 "$1" -o "$2"; }
+fetch "$base/$name" "$work/$name"
 fetch "$base/SHA256SUMS" "$work/SHA256SUMS"
-fetch "$base/$archive" "$work/$archive"
-python3 - "$work" "$archive" <<'PY'
-from pathlib import Path, PurePosixPath
-import hashlib,re,sys,tarfile
-work=Path(sys.argv[1]);name=sys.argv[2]
-matches=[]
-for line in (work/'SHA256SUMS').read_text().splitlines():
-    fields=line.split()
-    if len(fields)==2 and fields[1].lstrip('*')==name: matches.append(fields[0])
-if len(matches)!=1 or not re.fullmatch(r'[0-9a-f]{64}',matches[0]): raise SystemExit('发行包摘要记录无效。')
-digest=hashlib.sha256()
-with (work/name).open('rb') as source:
-    for block in iter(lambda:source.read(1024*1024),b''):digest.update(block)
-if digest.hexdigest()!=matches[0]:raise SystemExit('发行包 SHA-256 不匹配，已停止。')
-target=work/'package';target.mkdir()
-with tarfile.open(work/name) as bundle:
-    members=bundle.getmembers()
-    if len(members)>3000 or sum(m.size for m in members)>2*1024**3:raise SystemExit('发行包大小超出限制。')
-    for member in members:
-        path=PurePosixPath(member.name)
-        if path.is_absolute() or '..' in path.parts or not member.isfile():raise SystemExit('发行包包含非普通文件或无效路径。')
-        destination=target.joinpath(*path.parts);destination.parent.mkdir(parents=True,exist_ok=True)
-        with bundle.extractfile(member) as source,destination.open('wb') as output:
-            while True:
-                block=source.read(1024*1024)
-                if not block:break
-                output.write(block)
-        destination.chmod(member.mode & 0o777 & ~0o022)
-PY
-python3 "$work/package/deploy/install/cloud.py" --package "$work/package" "$@"
+(cd "$work" && sha256sum -c SHA256SUMS)
+tar -tzf "$work/$name" | while IFS= read -r path; do
+    case "$path" in mfconnect/*) ;; *) exit 1;; esac
+    case "/$path/" in */../*|*/./*|*//* ) exit 1;; esac
+done
+tar -tvzf "$work/$name" | awk 'substr($0,1,1) != "-" {exit 1}'
+tar -xzf "$work/$name" --no-same-owner
+cd mfconnect
+sha256sum -c CONTENTS.sha256
+docker load --input images.tar.gz
+docker run --rm -it --network none -v "$PWD:/output" "mfconnect-gateway:$version" configure
+echo '准备好域名解析和证书后，在 mfconnect 目录执行：docker compose up -d'

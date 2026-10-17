@@ -10,7 +10,7 @@ import subprocess
 import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '0.7.0'
+VERSION = '0.7.2'
 IMAGE_TAG = VERSION + '-docker.1'
 
 
@@ -23,6 +23,7 @@ def main():
     files = {}
     for name in ('Dockerfile', '.dockerignore', 'compose.yaml', '.env.example',
                  'deploy/docker/entrypoint.sh', 'deploy/docker/healthcheck.sh',
+                 'deploy/docker/watch-tls.sh',
                  'deploy/docker/install-updater.sh', 'deploy/docker/mfconnect-updater.service'):
         files[name] = ((ROOT / name).read_bytes(), 0o755 if name.endswith('.sh') else 0o644)
     for name in ('deploy/unified/config.example.json', 'deploy/unified/manage.py',

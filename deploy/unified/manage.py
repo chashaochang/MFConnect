@@ -24,7 +24,7 @@ def dns_name(value):
     return value
 
 
-def configuration(c):
+def configuration(c, require_dns=True):
     u = urlsplit(c['entry_origin'])
     if u.scheme != 'https' or u.netloc != u.hostname or u.path or u.query or u.fragment:
         raise ValueError('entry_origin must be a plain HTTPS DNS origin')
@@ -37,10 +37,11 @@ def configuration(c):
         raise ValueError('Entry must use a DNS name, not an IP literal')
     if len(host) > 216:
         raise ValueError('Entry is too long to accommodate a 36-character application label')
-    zone = dns_name(c['zone'])
-    if host != zone and not host.endswith('.' + zone):
-        raise ValueError('Entry must belong to the explicitly selected DNS zone')
-    ipaddress.IPv4Address(c['ipv4'])
+    if require_dns:
+        zone = dns_name(c['zone'])
+        if host != zone and not host.endswith('.' + zone):
+            raise ValueError('Entry must belong to the explicitly selected DNS zone')
+        ipaddress.IPv4Address(c['ipv4'])
     c = dict(c, host=host)
     names = [host, '*.' + host]
     ingress = [host, '*.' + host]
@@ -61,8 +62,10 @@ def configuration(c):
         value = c[key]
         if not re.fullmatch(r'/[A-Za-z0-9_./-]+', value) or '..' in Path(value).parts:
             raise ValueError('Use an absolute path without spaces or directives: ' + key)
-    if c.get('dns_provider', 'tencent') != 'tencent':
+    if require_dns and c.get('dns_provider', 'tencent') != 'tencent':
         raise ValueError('Automated DNS currently supports Tencent DNSPod only')
+    if c.get('acme_dns', 'dns_tencent') not in ('dns_tencent', 'dns_cf', 'dns_ali'):
+        raise ValueError('Unsupported ACME DNS provider')
     if 'dns_sleep' in c and (type(c['dns_sleep']) is not int or not 30 <= c['dns_sleep'] <= 600):
         raise ValueError('dns_sleep must be an integer between 30 and 600 seconds')
     return c
@@ -92,6 +95,8 @@ def nginx(c):
     # Nginx wildcard server_name also accepts deeper labels. The application
     # server performs exact host matching and rejects those deeper hosts.
     root = c['deployment_dir']
+    upstream = ('set $mf_upstream mfconnect:8443;\n        proxy_pass https://$mf_upstream;'
+                if c.get('container_proxy') else 'proxy_pass https://127.0.0.1:18443;')
     def tls_server(names, downloads=False):
         download_location = ''
         if downloads:
@@ -116,7 +121,7 @@ def nginx(c):
     # No access logs: installer paths contain one-use credentials.
     access_log off;
 {download_location}    location / {{
-        proxy_pass https://127.0.0.1:18443;
+        {upstream}
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header Upgrade $http_upgrade;
@@ -148,6 +153,8 @@ server {{
     return 308 https://$host$request_uri;
 }}
 '''
+    if c.get('container_proxy'):
+        rendered = 'resolver 127.0.0.11 valid=10s ipv6=off;\n' + rendered
     if c.get('downloads_root'):
         # Only infrastructure roots serve release artifacts. NAS and application
         # hosts retain their own /downloads paths without shadowing by nginx.
@@ -181,7 +188,7 @@ def certificate(c, renew=False):
     if renew:
         cmd += ['-d', c['host'], '--ecc']
     else:
-        cmd += ['--dns', 'dns_tencent', '--keylength', 'ec-256']
+        cmd += ['--dns', c.get('acme_dns', 'dns_tencent'), '--keylength', 'ec-256']
         for name in c['sans']:
             cmd += ['-d', name]
     if c.get('dns_sleep'):

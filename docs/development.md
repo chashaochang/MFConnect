@@ -20,7 +20,7 @@ make build
 make frp
 go test -race ./internal/... ./cmd/...
 python3 scripts/test_plugin.py
-python3 scripts/test_cloud_installer.py
+python3 scripts/test_compose_installer.py
 python3 scripts/test_unified_deployment.py
 python3 scripts/test_unified_deployment.py --native
 ```
@@ -38,6 +38,8 @@ make plugin RELEASE_BASE=https://downloads.example.com/mfconnect
 ```
 
 `plugin-local` 生成离线测试包；在线清单引用指定发布地址。`docker-bundle` 生成 Compose 构建目录包，不是可直接 `docker load` 的镜像归档。版本、载荷摘要和签名必须与实际程序一致。
+
+完整 Docker 部署测试为 `sudo python3 scripts/test_compose_stack.py`，使用独立项目、数据卷、测试 CA 和示例域名，覆盖无云凭据启动、证书轮换和配置保留。
 
 GitHub 的 `v*` 发行标签触发 `.github/workflows/release.yml`：执行检查、编译程序、构建镜像和插件、测试真实 Docker / Nginx，再发布部署包和 SHA-256 清单。`scripts/package_release.py` 使用明确文件名单打包，不复制整个工作目录。第三方 acme.sh 固定摘要并保留完整源码和许可证。发布后的固定版本文件不覆盖，修订使用新标签和新文件名。
 

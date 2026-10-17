@@ -5,6 +5,7 @@
 !deploy/docker/
 !deploy/docker/entrypoint.sh
 !deploy/docker/healthcheck.sh
+!deploy/docker/watch-tls.sh
 !dist/
 !dist/mfconnect-server
 !dist/tools/

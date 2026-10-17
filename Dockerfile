@@ -1,7 +1,7 @@
 # Digest checked against docker-library/repo-info, repos/alpine/remote/3.22.md.
 FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
 
-ARG MF_VERSION=0.7.0
+ARG MF_VERSION=0.7.2
 LABEL org.opencontainers.image.title="MF Connect server" \
       org.opencontainers.image.version="${MF_VERSION}-docker.1"
 
@@ -17,6 +17,7 @@ COPY --chmod=0755 dist/tools/frps /usr/local/bin/frps
 COPY dist/tools/FRP-LICENSE dist/tools/FRP_VERSION /usr/local/share/mfconnect/
 COPY --chmod=0755 deploy/docker/entrypoint.sh /usr/local/bin/mfconnect-entrypoint
 COPY --chmod=0755 deploy/docker/healthcheck.sh /usr/local/bin/mfconnect-healthcheck
+COPY --chmod=0755 deploy/docker/watch-tls.sh /usr/local/bin/mfconnect-watch-tls
 
 RUN test "$(mfconnect-server version)" = "$MF_VERSION" \
     && test "$(frps --version)" = "0.71.1"

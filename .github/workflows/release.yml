@@ -2,6 +2,7 @@ name: Build installable release
 on:
   push:
     tags: ['v[0-9]*']
+    branches: ['feat/unified-entry']
 permissions:
   contents: write
 jobs:
@@ -20,7 +21,7 @@ jobs:
           sudo apt-get install -y nginx python3-cryptography jq
           python3 scripts/check_publication.py --ref HEAD
           python3 scripts/test_publication.py
-          python3 scripts/test_cloud_installer.py
+          python3 scripts/test_compose_installer.py
           python3 scripts/test_unified_deployment.py
           go test -race ./internal/... ./cmd/...
       - name: Build binaries, plugin and image
@@ -29,16 +30,21 @@ jobs:
           python3 scripts/package_plugin.py --binary dist/mfconnectd --frpc dist/tools/frpc --frp-license dist/tools/FRP-LICENSE --release-base https://downloads.example.invalid/mfconnect --output dist/installer-plugin
           server_version=$(dist/mfconnect-server version)
           docker build -t "mfconnect-server:${server_version}-docker.1" .
-          docker save "mfconnect-server:${server_version}-docker.1" | gzip -n > dist/server-image.tar.gz
-          image_id=$(docker image inspect --format '{{.Id}}' "mfconnect-server:${server_version}-docker.1")
-          python3 scripts/package_release.py --version "${GITHUB_REF_NAME#v}" --image dist/server-image.tar.gz --image-id "$image_id" --plugin-dir dist/installer-plugin --output dist/release
+          python3 scripts/package_gateway.py --plugin-dir dist/installer-plugin
+          docker build -t "mfconnect-gateway:${server_version}" dist/gateway-context
+          docker save "mfconnect-server:${server_version}-docker.1" "mfconnect-gateway:${server_version}" | gzip -n > dist/images.tar.gz
+          server_id=$(docker image inspect --format '{{.Id}}' "mfconnect-server:${server_version}-docker.1")
+          gateway_id=$(docker image inspect --format '{{.Id}}' "mfconnect-gateway:${server_version}")
+          python3 scripts/package_release.py --version "$server_version" --images dist/images.tar.gz --server-image-id "$server_id" --gateway-image-id "$gateway_id" --output dist/release
       - name: Verify real Docker and Nginx runtime
         run: |
           MF_TEST_SERVER="$PWD/dist/mfconnect-server" MF_TEST_NGINX=/usr/sbin/nginx python3 scripts/test_unified_deployment.py --native
           sudo python3 scripts/test_cloud_container.py --release-dir "$PWD" --work-dir /tmp/mfconnect-release-container-test
+          sudo --preserve-env=GITHUB_STEP_SUMMARY python3 scripts/test_compose_stack.py
       - name: Publish immutable release assets
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          printf '%s\n' '预编译 Linux amd64 部署包，包含云端 Docker 镜像、Unraid 插件和交互式安装向导。使用仓库 README 中的安装命令。' > /tmp/release-notes.txt
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "MF Connect $GITHUB_REF_NAME" --notes-file /tmp/release-notes.txt dist/release/mfconnect-*-deploy.tar.gz dist/release/SHA256SUMS dist/release/bundle.json
+          printf '%s\n' '完整 Docker Compose 部署包：云端、网关、证书管理和插件。默认挂载已有证书，无云账号要求；可选 Cloudflare / 阿里云 DNS / DNSPod 自动申请。宿主机只需 Docker Compose。' > /tmp/release-notes.txt
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "MF Connect $GITHUB_REF_NAME" --notes-file /tmp/release-notes.txt dist/release/mfconnect-*-docker-amd64.tar.gz dist/release/SHA256SUMS dist/release/bundle.json
