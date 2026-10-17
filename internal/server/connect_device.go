@@ -49,6 +49,7 @@ func (s *Server) deviceConnect(w http.ResponseWriter, r *http.Request) {
 		}
 		respond(w, 200, map[string]any{"allowed": true, "strip_authorization": s.controlCredential(in.CredentialHash)})
 	case "endpoints":
+		w.Header().Set("X-MF-Endpoint-Contract", EndpointContract)
 		out := s.endpointInfo(r)
 		out["device_id"], out["connect"] = d.ID, s.connectInfo(d, r)
 		state := s.Store.View()

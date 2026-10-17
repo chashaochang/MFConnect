@@ -63,5 +63,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          printf '%s\n' 'Docker WebUI 自动发现和远程接入，支持经验证的公网网页直连及中继回退；统一入口契约 2，兼容旧入口。支持普通 Docker、Docker Compose 和可更新 Unraid 插件。详见 docs/api.md 与 docs/deployment.md。' > /tmp/release-notes.txt
+          printf '%s\n' '修复旧 API session／refresh 未协商却返回契约 2 的兼容问题。旧流程保持 schema 1，显式契约 2 与统一 /api 保持 schema 2。现有插件 0.8.0 可直接使用，不需要改 NAS 配置。包含自动 Docker WebUI 接入和 Docker／Compose 部署。详见 docs/api.md。' > /tmp/release-notes.txt
           gh release create "$GITHUB_REF_NAME" --verify-tag --title "MF Connect $GITHUB_REF_NAME" --notes-file /tmp/release-notes.txt dist/release/mfconnect-*.tar.gz dist/release/SHA256SUMS dist/release/bundle.json

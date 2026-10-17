@@ -15,8 +15,8 @@ from urllib.parse import urlparse
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--version', default='0.8.0', help='Unraid plugin package version')
-parser.add_argument('--connector-version', default='0.8.0', help='Bundled connector binary version')
+parser.add_argument('--version', default='0.8.1', help='Unraid plugin package version')
+parser.add_argument('--connector-version', default='0.8.1', help='Bundled connector binary version')
 parser.add_argument('--updater', type=Path, default=root / 'dist/mfconnect-updater')
 parser.add_argument('--frp-version', default='0.71.1')
 parser.add_argument('--binary', type=Path, required=True)

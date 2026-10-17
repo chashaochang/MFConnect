@@ -69,6 +69,25 @@ func (s *Server) apiBase(r *http.Request) string {
 	}
 	return "https://" + s.Config.APIHost
 }
+
+// The unified /api route selects v2 implicitly. A legacy route only selects v2
+// with the explicit header; learning that a server supports v2 is not consent
+// to change a persisted client's endpoint or response contract.
+func (s *Server) negotiatedContract(r *http.Request) string {
+	if s.canonical(r) || r.Header.Get("X-MF-Endpoint-Contract") == EndpointContract {
+		return EndpointContract
+	}
+	return "1"
+}
+
+func (s *Server) connectEndpointInfo(r *http.Request) map[string]any {
+	if s.negotiatedContract(r) == EndpointContract {
+		return s.endpointInfo(r)
+	}
+	// Preserve the original v1 shape, including the absence of v2 descriptors.
+	return map[string]any{"schema_version": 1, "api_origin": "https://" + s.Config.APIHost}
+}
+
 func (s *Server) endpointInfo(r *http.Request) map[string]any {
 	base := s.apiBase(r)
 	u, _ := url.Parse(base)

@@ -20,7 +20,7 @@ if [ "$runtime" = compose ]; then docker compose version >/dev/null; fi
 docker info >/dev/null
 for command in curl tar sha256sum awk; do command -v "$command" >/dev/null; done
 [ ! -e mfconnect ] || { echo 'mfconnect directory already exists; manage that deployment without rerunning installation.' >&2; exit 1; }
-version=0.8.0
+version=0.8.1
 base="https://github.com/chashaochang/MFConnect/releases/download/v${version}"
 name="mfconnect-${version}-deploy.tar.gz"
 if [ "$offline" = 1 ]; then name="mfconnect-${version}-docker-amd64.tar.gz"; fi

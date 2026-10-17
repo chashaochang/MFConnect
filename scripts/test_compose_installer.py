@@ -65,9 +65,9 @@ class ComposeInstallerTests(unittest.TestCase):
 
     def plugin(self):
         assets = self.root / 'assets'; assets.mkdir()
-        payload = 'mfconnect-0.8.0-linux-amd64.tar.gz'
+        payload = 'mfconnect-0.8.1-linux-amd64.tar.gz'
         (assets / payload).write_bytes(b'payload')
-        (assets / 'release.json').write_text(json.dumps(dict(payload=payload,version='0.8.0',
+        (assets / 'release.json').write_text(json.dumps(dict(payload=payload,version='0.8.1',
             sha256=hashlib.sha256(b'payload').hexdigest(), release_base=gateway.PLACEHOLDER)))
         (assets / 'mfconnect.plg').write_text(gateway.PLACEHOLDER + '/' + payload)
         return assets
@@ -82,7 +82,7 @@ class ComposeInstallerTests(unittest.TestCase):
             self.assertEqual((self.root / name).stat().st_mode & 0o777, 0o755)
         self.assertEqual(updates.stat().st_mode & 0o777, 0o700)
         self.assertIn('https://example.test/downloads/mfconnect', (updates / 'plugin-install.plg').read_text())
-        (assets / 'mfconnect-0.8.0-linux-amd64.tar.gz').write_bytes(b'corrupt')
+        (assets / 'mfconnect-0.8.1-linux-amd64.tar.gz').write_bytes(b'corrupt')
         with patch.object(gateway.os, 'chown'), self.assertRaises(ValueError): gateway.publish(c, assets, updates)
 
     def test_certificate_replacement_is_verified_before_activation(self):
@@ -148,11 +148,11 @@ class ComposeInstallerTests(unittest.TestCase):
     def test_deployment_archive_excludes_images_and_offline_bundle_contains_them(self):
         images = self.root / 'images.tar.gz'; images.write_bytes(b'test-image-archive')
         output = self.root / 'release'
-        subprocess.run([sys.executable,ROOT / 'scripts/package_release.py','--version','0.8.0',
+        subprocess.run([sys.executable,ROOT / 'scripts/package_release.py','--version','0.8.1',
                         '--images',images,'--server-image-id','sha256:' + '1'*64,
                         '--gateway-image-id','sha256:' + '2'*64,'--output',output],check=True,stdout=subprocess.PIPE)
         for suffix in ('deploy','docker-amd64'):
-            with tarfile.open(output / ('mfconnect-0.8.0-' + suffix + '.tar.gz')) as archive:
+            with tarfile.open(output / ('mfconnect-0.8.1-' + suffix + '.tar.gz')) as archive:
                 names = archive.getnames()
                 self.assertIn('mfconnect/docker-run.sh',names)
                 self.assertIn('mfconnect/compose.yaml',names)

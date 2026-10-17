@@ -177,7 +177,7 @@ func (s *Server) connectUserRoute(w http.ResponseWriter, r *http.Request, p stor
 }
 func (s *Server) sessionResponse(r *http.Request, p store.Principal, access, refresh string) map[string]any {
 	d := s.Store.View().Devices[p.DeviceID]
-	out := s.endpointInfo(r)
+	out := s.connectEndpointInfo(r)
 	out["device_id"], out["access_token"], out["expires_at"] = d.ID, access, p.Expires
 	out["refresh_token"], out["refresh_expires_at"], out["connect"] = refresh, p.RefreshExpires, s.connectInfo(d, r)
 	return out
@@ -223,7 +223,7 @@ func (s *Server) connectPublicRoute(w http.ResponseWriter, r *http.Request) bool
 			reject(w, 404, "connect_not_found")
 			return true
 		}
-		out := s.endpointInfo(r)
+		out := s.connectEndpointInfo(r)
 		out["device_id"], out["connect"] = d.ID, s.connectInfo(d, r)
 		respond(w, 200, out)
 		return true

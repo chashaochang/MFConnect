@@ -10,7 +10,7 @@ import subprocess
 import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '0.8.0'
+VERSION = '0.8.1'
 IMAGE_TAG = VERSION + '-docker.1'
 
 

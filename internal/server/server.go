@@ -182,6 +182,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			reject(w, 405, "method_not_allowed")
 			return
 		}
+		w.Header().Set("X-MF-Endpoint-Contract", EndpointContract)
 		respond(w, 200, s.endpointInfo(r))
 		return
 	}
@@ -198,7 +199,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = routed
-	w.Header().Set("X-MF-Endpoint-Contract", EndpointContract)
+	w.Header().Set("X-MF-Endpoint-Contract", s.negotiatedContract(r))
 	if origin := r.Header.Get("Origin"); origin != "" && origin != "https://"+hostname(r.Host) {
 		reject(w, 403, "origin_not_allowed")
 		return
@@ -208,6 +209,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == "GET" && r.URL.Path == "/v1/endpoints" {
+		w.Header().Set("X-MF-Endpoint-Contract", EndpointContract)
 		respond(w, 200, s.endpointInfo(r))
 		return
 	}

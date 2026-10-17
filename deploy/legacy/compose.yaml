@@ -2,7 +2,7 @@ name: mfconnect
 
 services:
   mfconnect:
-    image: mfconnect-server:${MF_IMAGE_TAG:-0.8.0-docker.1}
+    image: mfconnect-server:${MF_IMAGE_TAG:-0.8.1-docker.1}
     pull_policy: never
     build:
       context: .

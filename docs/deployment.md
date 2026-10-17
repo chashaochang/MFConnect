@@ -6,7 +6,7 @@
 
 首次安装按 [README 的标准 Docker 或 Compose 命令](../README.md#自己部署中继) 操作即可。仓库根目录的 `compose.yaml` 是完整新部署模板。交互向导作为可选方式，只下载配置和镜像，不安装宿主机服务；已存在 `mfconnect` 目录时拒绝覆盖。
 
-两种方式运行相同的服务：`mfconnect-server` 提供 API 和 FRP，`mfconnect-gateway` 提供 HTTPS 网关、证书管理和插件下载。0.8.0 包含服务端及插件 0.8.0、FRP 0.71.1，仅支持 Linux amd64。宿主机不挂载 Docker socket，不运行证书续期任务。
+两种方式运行相同的服务：`mfconnect-server` 提供 API 和 FRP，`mfconnect-gateway` 提供 HTTPS 网关、证书管理和插件下载。0.8.1 包含服务端及插件 0.8.1、FRP 0.71.1，仅支持 Linux amd64。宿主机不挂载 Docker socket，不运行证书续期任务。
 
 ### 配置域名
 
@@ -27,11 +27,11 @@
 
 ```bash
 curl -fLO --proto '=https' --proto-redir '=https' --retry 3 \
-  https://github.com/chashaochang/MFConnect/releases/download/v0.8.0/mfconnect-0.8.0-deploy.tar.gz
+  https://github.com/chashaochang/MFConnect/releases/download/v0.8.1/mfconnect-0.8.1-deploy.tar.gz
 curl -fLO --proto '=https' --proto-redir '=https' --retry 3 \
-  https://github.com/chashaochang/MFConnect/releases/download/v0.8.0/SHA256SUMS
-awk '$2 == "mfconnect-0.8.0-deploy.tar.gz" {print; n++} END {if (n != 1) exit 1}' SHA256SUMS > selected.sha256
-sha256sum -c selected.sha256 && tar -xzf mfconnect-0.8.0-deploy.tar.gz
+  https://github.com/chashaochang/MFConnect/releases/download/v0.8.1/SHA256SUMS
+awk '$2 == "mfconnect-0.8.1-deploy.tar.gz" {print; n++} END {if (n != 1) exit 1}' SHA256SUMS > selected.sha256
+sha256sum -c selected.sha256 && tar -xzf mfconnect-0.8.1-deploy.tar.gz
 cd mfconnect
 cp .env.example .env
 chmod 600 .env
@@ -123,11 +123,11 @@ App 内自动更新需要部署者预先配置更新频道；普通使用者不�
 
 无法访问 GHCR 时，可从 GitHub Release 下载含镜像的包。向导也支持离线镜像模式，将安装命令改成 `sh mfconnect-install.sh --docker --offline` 或 `sh mfconnect-install.sh --compose --offline`；仍需能访问 GitHub 下载文件。
 
-完全离线的服务器可在其他设备上下载 `mfconnect-0.8.0-docker-amd64.tar.gz` 和 `SHA256SUMS`，传入服务器后执行：
+完全离线的服务器可在其他设备上下载 `mfconnect-0.8.1-docker-amd64.tar.gz` 和 `SHA256SUMS`，传入服务器后执行：
 
 ```bash
-awk '$2 == "mfconnect-0.8.0-docker-amd64.tar.gz" {print; n++} END {if (n != 1) exit 1}' SHA256SUMS > selected.sha256
-sha256sum -c selected.sha256 && tar -xzf mfconnect-0.8.0-docker-amd64.tar.gz
+awk '$2 == "mfconnect-0.8.1-docker-amd64.tar.gz" {print; n++} END {if (n != 1) exit 1}' SHA256SUMS > selected.sha256
+sha256sum -c selected.sha256 && tar -xzf mfconnect-0.8.1-docker-amd64.tar.gz
 cd mfconnect
 docker load --input images.tar.gz
 cp .env.example .env

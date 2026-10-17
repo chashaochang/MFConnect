@@ -1,6 +1,6 @@
 # API 与客户端接入
 
-本文适用于 **服务端／插件 0.8.0**。本文是客户端最终契约，设置能力版本为 1。`endpoint_contract=2` 是地址协议版本，与软件版本分别管理。所有域名、标识和地址均为示例。
+本文适用于 **服务端 0.8.1、插件 0.8.0 及以上**。本文是客户端最终契约，设置能力版本为 1。`endpoint_contract=2` 是地址协议版本，与软件版本分别管理。所有域名、标识和地址均为示例。
 
 ## 地址模型
 
@@ -98,6 +98,23 @@ App 继续使用 `api_base_url`，同时发送契约 2 Header。`canonical_api_b
 ## 会话、安装与路径清单
 
 本地获取 session：向 `/plugins/mfconnect/Connect.php` POST form：`action=session`、`endpoint_contract=2`、原生 `csrf_token`、`mf_csrf`。复用 NAS 登录 Cookie，不将 NAS Cookie 发到云 API。返回的 session 包含同一端点描述及 access/refresh 字段，令牌仍只允许当前 NAS 范围；云端更新权限未扩大。
+
+### session 与 refresh 的版本选择
+
+0.8.1 修复旧 session／refresh 被无条件标记为契约 2 的兼容问题。插件 0.8.0 可直接配合修复后的服务端，无需修改 NAS 配置。
+
+| 请求 | 返回契约 |
+|---|---|
+| 插件保存旧 API 配置，GET Connect.php 未指定契约、POST `action=session` 未指定契约 | `schema_version:1`；session 保持旧 API 与 NAS 地址 |
+| 旧 API `/v1/connect/refresh`，不传 Header 或传 `X-MF-Endpoint-Contract: 1` | `schema_version:1`，响应 Header 为 1 |
+| 旧 API 的 session／refresh，传 `X-MF-Endpoint-Contract: 2` | 完整契约 2，含 `capabilities.launch_navigation:1` |
+| 统一 `/api/v1/...` 的 session／refresh | 隐含选择契约 2，不降级为 1 |
+
+契约 1 的 session／refresh 仅包含 `schema_version`、`api_origin`、`device_id`、`access_token`、`expires_at`、`refresh_token`、`refresh_expires_at`、`connect`；不添加 `endpoint_contract` 或契约 2 的地址描述。缺失 `endpoint_contract` 按 1 处理。旧 ID resolve 也保持契约 1。纯统一插件配置仍拒绝本地契约 1，返回 409 `endpoint_contract_2_required`。
+
+公共 `/.well-known/mfconnect`、`/v1/endpoints` 及设备 `action=endpoints` 仍提供契约 2 的能力描述；发现能力不等于升级既有会话。客户端在旧 API 上选定契约 2 后，每次请求（包括刷新）都须继续发送 Header 2。未知契约在轮换 refresh token 前拒绝。
+
+刷新仍会原子轮换 access／refresh token，旧 refresh 不可重放。若旧版本已经完成轮换，但客户端因响应协议错误丢弃新令牌，服务端修复不会恢复已消费的旧令牌；应通过同一已登录 NAS 的插件重新取得 MF 会话，不清除 NAS 登录或改变可信 API 范围。
 
 下表路径均相对于 **api_base_url**。新入口加 `/api`，旧 API 仍原地处理裸路径，不重定向。
 

@@ -21,7 +21,7 @@ import (
 	"mfconnect/internal/updates"
 )
 
-const Version = "0.8.0"
+const Version = "0.8.1"
 const FRPVersion = "0.71.1"
 const EasyTierVersion = "2.6.4"
 
